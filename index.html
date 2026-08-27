@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Automatización - Actas de Entrega de Activos Tecnológicos</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 font-sans antialiased">
+
+  <!-- Top Navigation Bar -->
+  <header class="no-print bg-slate-900 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="bg-blue-600 p-2 rounded-lg text-white">
+          <i data-lucide="file-text" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight">Synerjoy BPO - Gestión de Activos</h1>
+          <p class="text-xs text-slate-400">Generador y Automatizador de Actas de Entrega / Cambio</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btn-load-sample" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-md transition flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="database" class="w-4 h-4"></i> Cargar Caso Nicoll (GLPI 43560)
+        </button>
+        <button id="btn-clear" class="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-3 py-1.5 rounded-md transition flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Limpiar
+        </button>
+        <button id="btn-export-json" class="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-3 py-1.5 rounded-md transition flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="download" class="w-4 h-4"></i> Exportar JSON
+        </button>
+        <label for="input-import-json" class="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-3 py-1.5 rounded-md transition cursor-pointer flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="upload" class="w-4 h-4"></i> Importar JSON
+          <input type="file" id="input-import-json" accept=".json" class="hidden" />
+        </label>
+        <button id="btn-copy-txt" class="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-3 py-1.5 rounded-md transition flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="copy" class="w-4 h-4"></i> Copiar Texto
+        </button>
+        <button id="btn-print" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-1.5 rounded-md transition flex items-center gap-1.5 shadow">
+          <i data-lucide="printer" class="w-4 h-4"></i> Imprimir / PDF
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="no-print fixed bottom-5 right-5 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-xl text-sm flex items-center space-x-2 transition-all opacity-0 pointer-events-none z-50">
+    <i data-lucide="info" class="w-4 h-4 text-blue-400"></i>
+    <span id="toast-msg">Mensaje de notificación</span>
+  </div>
+
+  <!-- Main Container: Editor + Preview -->
+  <main class="max-w-7xl mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Form Controls Column (Left, Width: 5 cols on lg) -->
+    <section class="no-print lg:col-span-5 space-y-4">
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+            <i data-lucide="sliders" class="w-5 h-5 text-blue-600"></i> Formulario de Datos
+          </h2>
+          <span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">Auto-guardado</span>
+        </div>
+
+        <form id="acta-form" class="space-y-6 text-xs">
+
+          <!-- 1. Encabezado & Datos Generales -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">1. Datos Generales del Acta</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold mb-1">Fecha (DD/MM/AAAA)</label>
+                <input type="text" id="form-fecha" class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="5/05/2026" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Sede</label>
+                <input type="text" id="form-sede" class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Cali Principal" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Tipo de Acta</label>
+                <select id="form-tipo-acta" class="w-full border rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                  <option value="Entrega">Entrega</option>
+                  <option value="Cambio">Cambio</option>
+                  <option value="Devolución">Devolución</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">N° Caso GLPI</label>
+                <input type="text" id="form-glpi" class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="43560" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Proceso / Portafolio</label>
+                <input type="text" id="form-proceso" class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="progreser2" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Nombre Completo Colaborador</label>
+                <input type="text" id="form-nombre" class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none font-medium text-slate-900" placeholder="Nicoll Asblhey Martinez Caicedo" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Cédula</label>
+                <input type="text" id="form-cedula" class="w-full border rounded px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="1085313154" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Usuarios y Accesos -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">2. Usuarios y Accesos</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold mb-1">Tipo Red</label>
+                <select id="form-tipo-red" class="w-full border rounded px-2 py-1.5">
+                  <option value="SI">SI</option>
+                  <option value="NO">NO</option>
+                  <option value="N/A">N/A</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Tipo Correo</label>
+                <select id="form-tipo-correo" class="w-full border rounded px-2 py-1.5">
+                  <option value="N/A">N/A</option>
+                  <option value="SI">SI</option>
+                  <option value="NO">NO</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Usuario Windows</label>
+                <input type="text" id="form-windows" class="w-full border rounded px-2.5 py-1.5" placeholder="Nmartinez" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Cuenta Correo</label>
+                <input type="text" id="form-cuenta-correo" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Acceso GLPI HelpDesk</label>
+                <input type="text" id="form-helpdesk" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Novedades AIO</label>
+                <input type="text" id="form-aio" class="w-full border rounded px-2.5 py-1.5" placeholder="NO" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Impresora</label>
+                <input type="text" id="form-impresora" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Control de Acceso</label>
+                <input type="text" id="form-control-acceso" class="w-full border rounded px-2.5 py-1.5" placeholder="SI" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Recurso Compartido</label>
+                <input type="text" id="form-recurso-compartido" class="w-full border rounded px-2.5 py-1.5 font-mono text-[11px]" placeholder="\\192.169.149.248\progreserjuridico2.0\ejecutivo" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Licencia Office 365</label>
+                <input type="text" id="form-licencia-office" class="w-full border rounded px-2.5 py-1.5 font-mono text-[11px]" placeholder="asesorop.progreserjuridico2.8@synerjoy.com" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Extensión</label>
+                <input type="text" id="form-extension" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Perfil Navegación</label>
+                <input type="text" id="form-perfil-navegacion" class="w-full border rounded px-2.5 py-1.5" placeholder="Fw_Banco1" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Power BI</label>
+                <input type="text" id="form-powerbi" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">VPN</label>
+                <input type="text" id="form-vpn" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Desktop / Portátil -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">3. Desktop / Portátil</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold mb-1">Desktop</label>
+                <select id="form-desktop" class="w-full border rounded px-2 py-1.5">
+                  <option value="SI">SI</option>
+                  <option value="N/A">N/A</option>
+                  <option value="NO">NO</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Portátil</label>
+                <select id="form-portatil" class="w-full border rounded px-2 py-1.5">
+                  <option value="N/A">N/A</option>
+                  <option value="SI">SI</option>
+                  <option value="NO">NO</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Equipo / Modelo</label>
+                <input type="text" id="form-equipo-modelo" class="w-full border rounded px-2.5 py-1.5" placeholder="HP ProDesk 400 G5 SFF" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Serial</label>
+                <input type="text" id="form-equipo-serial" class="w-full border rounded px-2.5 py-1.5" placeholder="MXL909338K" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Serial Devuelto (Si es cambio)</label>
+                <input type="text" id="form-equipo-serial-devuelto" class="w-full border rounded px-2.5 py-1.5" placeholder="N/A" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Procesador</label>
+                <input type="text" id="form-procesador" class="w-full border rounded px-2.5 py-1.5" placeholder="Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Dirección IP</label>
+                <input type="text" id="form-ip" class="w-full border rounded px-2.5 py-1.5" placeholder="192,169,149,76" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Memoria RAM</label>
+                <input type="text" id="form-ram" class="w-full border rounded px-2.5 py-1.5" placeholder="8  gb" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Disco Duro</label>
+                <input type="text" id="form-disco" class="w-full border rounded px-2.5 py-1.5" placeholder="1Tr" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Sistema Operativo</label>
+                <input type="text" id="form-so" class="w-full border rounded px-2.5 py-1.5" placeholder="windows 11" />
+              </div>
+              <div class="col-span-2">
+                <label class="block font-semibold mb-1">Placa Inventario</label>
+                <input type="text" id="form-placa-inv" class="w-full border rounded px-2.5 py-1.5" placeholder="587" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Periféricos Adicionales -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">4. Periféricos Adicionales</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold mb-1">Diadema</label>
+                <select id="form-diadema" class="w-full border rounded px-2 py-1.5"><option value="SI">SI</option><option value="N.A">N.A</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">CPU</label>
+                <select id="form-perif-cpu" class="w-full border rounded px-2 py-1.5"><option value="N.A">N.A</option><option value="SI">SI</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Teclado</label>
+                <select id="form-teclado" class="w-full border rounded px-2 py-1.5"><option value="SI">SI</option><option value="N.A">N.A</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Móvil</label>
+                <select id="form-movil" class="w-full border rounded px-2 py-1.5"><option value="N.A">N.A</option><option value="SI">SI</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Mouse</label>
+                <select id="form-mouse" class="w-full border rounded px-2 py-1.5"><option value="SI">SI</option><option value="N.A">N.A</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">SIM</label>
+                <select id="form-sim" class="w-full border rounded px-2 py-1.5"><option value="N.A">N.A</option><option value="SI">SI</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Otro</label>
+                <select id="form-otro" class="w-full border rounded px-2 py-1.5"><option value="N.A">N.A</option><option value="SI">SI</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">¿Cuál?</label>
+                <input type="text" id="form-otro-cual" class="w-full border rounded px-2.5 py-1.5" placeholder="" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Marca / Modelo</label>
+                <input type="text" id="form-perif-marca" class="w-full border rounded px-2.5 py-1.5" placeholder="jabra" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Placa Inventario GLPI</label>
+                <input type="text" id="form-perif-placa" class="w-full border rounded px-2.5 py-1.5" placeholder="89" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Serial Periférico</label>
+                <input type="text" id="form-perif-serial" class="w-full border rounded px-2.5 py-1.5" placeholder="00110413217" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Serial Devuelto</label>
+                <input type="text" id="form-perif-serial-dev" class="w-full border rounded px-2.5 py-1.5" placeholder="" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Monitor -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">5. Monitor</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold mb-1">Monitor</label>
+                <select id="form-monitor" class="w-full border rounded px-2 py-1.5"><option value="SI">SI</option><option value="N/A">N/A</option></select>
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Marca / Modelo</label>
+                <input type="text" id="form-monitor-marca" class="w-full border rounded px-2.5 py-1.5" placeholder="hp v190" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Placa Inventario GLPI</label>
+                <input type="text" id="form-monitor-placa" class="w-full border rounded px-2.5 py-1.5" placeholder="no tiene" />
+              </div>
+              <div>
+                <label class="block font-semibold mb-1">Serial Monitor</label>
+                <input type="text" id="form-monitor-serial" class="w-full border rounded px-2.5 py-1.5" placeholder="1cr8371361" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. Observaciones -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">6. Observaciones</h3>
+            <textarea id="form-observaciones" rows="3" class="w-full border rounded px-2.5 py-1.5" placeholder="Ingrese observaciones adicionales si aplica..."></textarea>
+          </div>
+
+          <!-- 7. Firmas y Responsables -->
+          <div class="space-y-3">
+            <h3 class="font-bold text-slate-700 text-sm border-l-4 border-blue-600 pl-2">7. Firmas y Responsables</h3>
+            <div class="space-y-3">
+              <!-- Entrega -->
+              <div class="bg-slate-50 p-2.5 rounded border border-slate-200 grid grid-cols-2 gap-2">
+                <span class="col-span-2 font-bold text-slate-700">Entrega:</span>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Nombre</label>
+                  <input type="text" id="form-entrega-nombre" class="w-full border rounded px-2 py-1" placeholder="hollman hoyos" />
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Cargo</label>
+                  <input type="text" id="form-entrega-cargo" class="w-full border rounded px-2 py-1" placeholder="aprendiz" />
+                </div>
+              </div>
+
+              <!-- Revisó -->
+              <div class="bg-slate-50 p-2.5 rounded border border-slate-200 grid grid-cols-2 gap-2">
+                <span class="col-span-2 font-bold text-slate-700">Revisó:</span>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Nombre</label>
+                  <input type="text" id="form-reviso-nombre" class="w-full border rounded px-2 py-1" placeholder="Carlos A. Sepulveda" />
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Cargo</label>
+                  <input type="text" id="form-reviso-cargo" class="w-full border rounded px-2 py-1" placeholder="Analista Procesos" />
+                </div>
+              </div>
+
+              <!-- Aprobó -->
+              <div class="bg-slate-50 p-2.5 rounded border border-slate-200 grid grid-cols-2 gap-2">
+                <span class="col-span-2 font-bold text-slate-700">Aprobó:</span>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Nombre</label>
+                  <input type="text" id="form-aprobo-nombre" class="w-full border rounded px-2 py-1" placeholder="Jaime Chicaiza" />
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Cargo</label>
+                  <input type="text" id="form-aprobo-cargo" class="w-full border rounded px-2 py-1" placeholder="Director Tecnologia" />
+                </div>
+              </div>
+
+              <!-- Recibe -->
+              <div class="bg-slate-50 p-2.5 rounded border border-slate-200 grid grid-cols-2 gap-2">
+                <span class="col-span-2 font-bold text-slate-700">Recibe (Usuario):</span>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Nombre</label>
+                  <input type="text" id="form-recibe-nombre" class="w-full border rounded px-2 py-1" placeholder="Nicoll Asblhey Martinez Caicedo" />
+                </div>
+                <div>
+                  <label class="block text-[10px] text-slate-500">Cargo</label>
+                  <input type="text" id="form-recibe-cargo" class="w-full border rounded px-2 py-1" placeholder="Asesor de Operacones" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </form>
+      </div>
+    </section>
+
+    <!-- Document Live Preview Column (Right, Width: 7 cols on lg) -->
+    <section class="lg:col-span-7">
+      <div class="bg-slate-400 p-2 sm:p-6 rounded-xl shadow-inner min-h-screen flex justify-center items-start overflow-x-auto">
+
+        <!-- Official Printable Document Paper (A4 size format) -->
+        <div id="document-paper" class="bg-white text-slate-900 shadow-2xl p-6 sm:p-8 rounded font-sans w-full max-w-[800px] border border-slate-300">
+
+          <!-- Header Table -->
+          <table class="w-full border-collapse border border-slate-900 text-center text-xs mb-4">
+            <tr>
+              <td rowspan="2" class="border border-slate-900 p-2 w-1/4 font-extrabold text-slate-800 text-sm bg-slate-50">
+                SYNERJOY BPO
+              </td>
+              <td rowspan="2" class="border border-slate-900 p-2 w-1/2 font-bold text-slate-900 text-sm bg-slate-50 leading-tight">
+                ACTA DE ENTREGA Y/O CAMBIO DE ACTIVOS TECNOLÓGICOS
+              </td>
+              <td class="border border-slate-900 p-1 text-[10px] text-left">
+                <strong>Versión:</strong> <span id="doc-version">1.0</span><br />
+                <strong>Fecha:</strong> <span id="doc-version-fecha">24/02/2026</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 p-1 text-[10px] text-left bg-slate-50">
+                <strong>Clasificación:</strong> <span id="doc-clasificacion">Privado</span>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Section 1: Data Header -->
+          <table class="w-full border-collapse border border-slate-900 text-[11px] mb-3">
+            <tr>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1 w-20">FECHA:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-fecha">5/05/2026</td>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1 w-20">SEDE:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-sede">Cali Principal</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1">ACTA:</td>
+              <td class="border border-slate-900 p-1" id="doc-acta-tipo-badge">
+                Entrega <span class="font-bold underline" id="doc-acta-entrega">SI</span> &nbsp;&nbsp; Cambio <span class="font-bold" id="doc-acta-cambio">N.A</span>
+              </td>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1">N° CASO GLPI:</td>
+              <td class="border border-slate-900 p-1 font-semibold text-blue-900" id="doc-glpi">43560</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1">PROCESO / PORTAFOLIO:</td>
+              <td colspan="3" class="border border-slate-900 p-1 font-medium" id="doc-proceso">progreser2</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1">NOMBRE COMPLETO:</td>
+              <td class="border border-slate-900 p-1 font-bold text-slate-900" id="doc-nombre">Nicoll Asblhey Martinez Caicedo</td>
+              <td class="border border-slate-900 bg-slate-200 font-bold p-1">CÉDULA:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-cedula">1085313154</td>
+            </tr>
+          </table>
+
+          <!-- Section 2: USUARIOS -->
+          <div class="bg-slate-800 text-white font-bold text-center text-xs py-1 tracking-wider uppercase mb-0 border border-slate-900">
+            USUARIOS
+          </div>
+          <table class="w-full border-collapse border border-slate-900 text-[10px] mb-3">
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1 w-1/6">TIPO:</td>
+              <td colspan="3" class="border border-slate-900 p-1">
+                Red: <strong id="doc-tipo-red">SI</strong> &nbsp;&nbsp;&nbsp;&nbsp; Correo: <strong id="doc-tipo-correo">N/A</strong>
+              </td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Windows:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-windows">Nmartinez</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1 w-1/4">Cuenta de Correo:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-cuenta-correo">N/A</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Acceso HelpDesk (GLPI):</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-helpdesk">N/A</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Novedades AIO:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-aio">NO</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Impresora:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-impresora">N/A</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Control de Acceso:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-control-acceso">SI</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Recurso Compartido:</td>
+              <td class="border border-slate-900 p-1 font-mono break-all text-[9.5px]" id="doc-recurso-compartido">\\192.169.149.248\progreserjuridico2.0\ejecutivo</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Licencia Office365:</td>
+              <td class="border border-slate-900 p-1 font-mono break-all text-[9.5px]" id="doc-licencia-office">asesorop.progreserjuridico2.8@synerjoy.com</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Extensión:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-extension">N/A</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Perfil de Navegación:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-perfil-navegacion">Fw_Banco1</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Power BI:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-powerbi">N/A</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">VPN:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-vpn">N/A</td>
+            </tr>
+          </table>
+
+          <!-- Section 3: DESKTOP / PORTATIL -->
+          <div class="bg-slate-800 text-white font-bold text-center text-xs py-1 tracking-wider uppercase mb-0 border border-slate-900">
+            DESKTOP / PORTATIL
+          </div>
+          <table class="w-full border-collapse border border-slate-900 text-[10px] mb-3">
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1 w-1/6">TIPO EQUIPO:</td>
+              <td colspan="3" class="border border-slate-900 p-1">
+                DESKTOP: <strong id="doc-desktop">SI</strong> &nbsp;&nbsp;&nbsp;&nbsp; PORTATIL: <strong id="doc-portatil">N/A</strong>
+              </td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Equipo/Modelo:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-equipo-modelo">HP ProDesk 400 G5 SFF</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1 w-1/4">Serial:</td>
+              <td class="border border-slate-900 p-1 font-mono font-bold" id="doc-equipo-serial">MXL909338K</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Procesador:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-procesador">Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Serial Devuelto (Si es cambio):</td>
+              <td class="border border-slate-900 p-1 font-mono" id="doc-equipo-serial-devuelto">N/A</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Dirección IP:</td>
+              <td class="border border-slate-900 p-1 font-mono" id="doc-ip">192,169,149,76</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Memoria RAM:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-ram">8  gb</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Disco Duro:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-disco">1Tr</td>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Sistema Operativo:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-so">windows 11</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Placa Inventario:</td>
+              <td colspan="3" class="border border-slate-900 p-1 font-bold text-blue-900" id="doc-placa-inv">587</td>
+            </tr>
+          </table>
+
+          <!-- Section 4: PERIFERICOS ADICIONALES -->
+          <div class="bg-slate-800 text-white font-bold text-center text-xs py-1 tracking-wider uppercase mb-0 border border-slate-900">
+            PERIFERICOS ADICIONALES
+          </div>
+          <table class="w-full border-collapse border border-slate-900 text-[10px] mb-3">
+            <tr>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">DIADEMA: <span id="doc-diadema">SI</span></td>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">CPU: <span id="doc-perif-cpu">N.A</span></td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">TECLADO: <span id="doc-teclado">SI</span></td>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">MOVIL: <span id="doc-movil">N.A</span></td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">MOUSE: <span id="doc-mouse">SI</span></td>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">SIM: <span id="doc-sim">N.A</span></td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">OTRO: <span id="doc-otro">N.A</span></td>
+              <td class="border border-slate-900 p-1 bg-slate-50 font-semibold text-center">¿Cuál?: <span id="doc-otro-cual"></span></td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Marca/Modelo:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-perif-marca">jabra</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Placa Inventario GLPI:</td>
+              <td class="border border-slate-900 p-1 font-semibold text-blue-900" id="doc-perif-placa">89</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Serial:</td>
+              <td class="border border-slate-900 p-1 font-mono font-bold" id="doc-perif-serial">00110413217</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Serial Devuelto (Si es cambio):</td>
+              <td class="border border-slate-900 p-1 font-mono" id="doc-perif-serial-dev"></td>
+            </tr>
+          </table>
+
+          <!-- Section 5: MONITOR -->
+          <div class="bg-slate-800 text-white font-bold text-center text-xs py-1 tracking-wider uppercase mb-0 border border-slate-900">
+            MONITOR
+          </div>
+          <table class="w-full border-collapse border border-slate-900 text-[10px] mb-3">
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1 w-1/4">MONITOR:</td>
+              <td class="border border-slate-900 p-1 font-bold" id="doc-monitor">SI</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Marca/Modelo:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-monitor-marca">hp v190</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Placa Inventario GLPI:</td>
+              <td class="border border-slate-900 p-1 font-medium" id="doc-monitor-placa">no tiene</td>
+            </tr>
+            <tr>
+              <td class="border border-slate-900 bg-slate-100 font-bold p-1">Serial:</td>
+              <td class="border border-slate-900 p-1 font-mono font-bold" id="doc-monitor-serial">1cr8371361</td>
+            </tr>
+          </table>
+
+          <!-- Section 6: OBSERVACIONES -->
+          <div class="bg-slate-800 text-white font-bold text-center text-xs py-1 tracking-wider uppercase mb-0 border border-slate-900">
+            OBSERVACIONES
+          </div>
+          <div class="border border-slate-900 p-2 min-h-[40px] text-[10.5px] mb-3 whitespace-pre-wrap" id="doc-observaciones">
+          </div>
+
+          <!-- Section 7: COMPROMISOS -->
+          <div class="bg-slate-800 text-white font-bold text-center text-xs py-1 tracking-wider uppercase mb-0 border border-slate-900">
+            COMPROMISOS
+          </div>
+          <div class="border border-slate-900 p-2 text-[9px] text-justify leading-tight space-y-1 mb-4 bg-slate-50">
+            <p><strong>Nota:</strong> Si es cambio de dispositivo tecnológico en el campo serial devuelto agregar el serial del activo que entregaron a tecnología de lo contrario llenar con NO APLICA (N/A).</p>
+            <p><strong>El usuario se compromete a:</strong></p>
+            <ul class="list-disc pl-3 space-y-0.5">
+              <li>Utilizar el hardware, software y servicios, sólo para el desempeño exclusivo de las funciones definidas para el cargo o actividad encomendada, y en asuntos estrictamente laborales.</li>
+              <li>No instalar ningún tipo software en el equipo entregado, ni crear o utilizar cuentas de correo electrónico o de mensajería instantánea personales, desde los equipos de propiedad de Synerjoy. No intercambiar partes (monitor, teclado, mouse, CPU y demás) con otros equipos y/o usuarios.</li>
+              <li>Manipular la diadema con mayor cuidado, evitando golpes, rayones, presiones o temperaturas excesivas y ambientes muy contaminados, Mantener líquidos y otras sustancias nocivas alejadas de los equipos, procurar no subir el volumen al máximo.</li>
+              <li>Se resalta que todo Software no permitido ni requerido por el Proceso de Infraestructura Tecnológica y de igual forma, el uso inadecuado del equipo será responsabilidad única del usuario de la máquina o diadema. Igualmente, el trabajador responderá ante la empresa por los daños ocasionados, autorizando con la firma del presente documento, que, en caso de siniestro, se autoriza de manera expresa el descuento por nomina o la respetiva liquidación laboral cubriendo el valor total de los daños causados.</li>
+            </ul>
+            <p><strong>APLICACIÓN DE CLÁUSULA DE CONFIDENCIALIDAD DEL CONTRATO CON SYNERJOY BPO SAS.</strong></p>
+            <ul class="list-disc pl-3 space-y-0.5">
+              <li>En el modo trabajo en casa sigue rigiendo todas las cláusulas contractuales del contrato suscrito entre el trabajador y empleador o contratante y contratista, en especial las obligaciones de reserva y confidencialidad de la información, garantizando el manejo adecuado de los datos en la mismas condiciones, términos y exigencias que Synerjoy establece.</li>
+              <li>De igual forma el colaborador se obliga a dar cumplimiento de las Política de Seguridad de la Información.</li>
+            </ul>
+          </div>
+
+          <!-- Section 8: FIRMAS -->
+          <table class="w-full border-collapse border border-slate-900 text-[10px] text-left">
+            <tr class="bg-slate-100 font-bold text-center">
+              <td class="border border-slate-900 p-1 w-1/4">Entrega:</td>
+              <td class="border border-slate-900 p-1 w-1/4">Revisó:</td>
+              <td class="border border-slate-900 p-1 w-1/4">Aprobó:</td>
+              <td class="border border-slate-900 p-1 w-1/4">Recibe:</td>
+            </tr>
+            <tr class="h-16">
+              <td class="border border-slate-900 p-2 align-bottom">
+                <div class="border-b border-slate-400 mb-1"></div>
+                <strong>Nombre:</strong> <span id="doc-entrega-nombre">hollman hoyos</span><br />
+                <strong>Cargo:</strong> <span id="doc-entrega-cargo">aprendiz</span>
+              </td>
+              <td class="border border-slate-900 p-2 align-bottom">
+                <div class="border-b border-slate-400 mb-1"></div>
+                <strong>Nombre:</strong> <span id="doc-reviso-nombre">Carlos A. Sepulveda</span><br />
+                <strong>Cargo:</strong> <span id="doc-reviso-cargo">Analista Procesos</span>
+              </td>
+              <td class="border border-slate-900 p-2 align-bottom">
+                <div class="border-b border-slate-400 mb-1"></div>
+                <strong>Nombre:</strong> <span id="doc-aprobo-nombre">Jaime Chicaiza</span><br />
+                <strong>Cargo:</strong> <span id="doc-aprobo-cargo">Director Tecnologia</span>
+              </td>
+              <td class="border border-slate-900 p-2 align-bottom">
+                <div class="border-b border-slate-400 mb-1"></div>
+                <strong>Nombre:</strong> <span id="doc-recibe-nombre">Nicoll Asblhey Martinez Caicedo</span><br />
+                <strong>Cargo:</strong> <span id="doc-recibe-cargo">Asesor de Operacones</span>
+              </td>
+            </tr>
+          </table>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    // Initialize Lucide icons
+    lucide.createIcons();
+  </script>
+</body>
+</html>
