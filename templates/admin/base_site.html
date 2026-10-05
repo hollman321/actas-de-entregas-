@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | Synerjoy Admin{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'accounts/css/admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div id="site-name"><a href="{% url 'admin:index' %}">Synerjoy · Administración</a></div>
+{% endblock %}
+
+{% block welcome-msg %}
+  <span class="synerjoy-admin-welcome">Sesión de <strong>{% firstof user.get_short_name user.get_username %}</strong></span>
+{% endblock %}

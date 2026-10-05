@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Supervisor{% endblock %}
+{% block content %}
+<div class="row g-4 mb-4">
+  <div class="col-md-12">
+    <div class="hero-panel p-4">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+          <p class="text-uppercase small mb-1 opacity-75">Rol</p>
+          <h2 class="mb-0">Supervisor</h2>
+        </div>
+        <div class="btn-group">
+          <a class="btn btn-success-synerjoy" href="/actas/review/">Aprobar pendientes</a>
+          <a class="btn btn-outline-light" href="/accounts/notifications/">Ver notificaciones</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card card-synerjoy p-3">
+      <h3 class="section-title mb-3">Semáforo de actas</h3>
+      {% for acta in latest_actas %}
+      <div class="d-flex align-items-center justify-content-between border rounded p-3 mb-2 {% if acta.status == 'REJECTED_BY_SUPERVISOR_ONE' or acta.status == 'REJECTED_BY_SUPERVISOR_TWO' %}semaphore-rejected{% elif acta.status == 'PENDING_SUPERVISOR_ONE' or acta.status == 'PENDING_SUPERVISOR_TWO' %}semaphore-pending{% else %}semaphore-approved{% endif %}">
+        <div>
+          <div class="fw-bold">{{ acta.glpi_case_number|default:'Sin número' }}</div>
+          <small class="text-muted">{{ acta.assigned_technician.username }} · {{ acta.get_status_display }}</small>
+        </div>
+        <div class="d-flex gap-2">
+          <a class="btn btn-success-synerjoy btn-sm" href="{% url 'html-acta-detail' acta.public_id %}">Revisar</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'html-acta-sign' acta.public_id %}">Firmar</a>
+        </div>
+      </div>
+      {% empty %}
+      <div class="text-muted py-3">No hay actas pendientes.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card card-synerjoy p-3">
+      <h3 class="section-title mb-3">Bandeja</h3>
+      {% for n in notifications %}
+      <div class="border rounded p-2 mb-2">
+        <div class="fw-semibold">{{ n.title }}</div>
+        <small class="text-muted">{{ n.time }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

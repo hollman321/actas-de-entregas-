@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Nueva acta{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+    <div>
+      <p class="text-uppercase small text-secondary fw-bold mb-1">Entrega</p>
+      <h2 class="mb-0">{{ title|default:'Nueva acta' }}</h2>
+    </div>
+    <button class="btn btn-primary-synerjoy touch-target" id="glpiButton" type="button"><span class="loading-label">Autocompletar desde GLPI</span><span class="loading-state spinner-border spinner-border-sm" role="status"></span></button>
+  </div>
+
+  <form method="post" data-unsaved>
+    {% csrf_token %}
+    <section class="form-section card-synerjoy p-3 mb-4">
+      <h3 class="section-title">1. Encabezado</h3>
+      <div class="row g-3">
+        <div class="col-md-3"><label class="form-label">Fecha</label><input type="date" class="form-control" name="act_date" value="{{ acta.act_date|date:'Y-m-d' }}" required></div>
+        <div class="col-md-3"><label class="form-label">Sede</label><select class="form-select" name="site_id" data-autocomplete-site><option value="">Seleccione</option>{% for site in sites %}<option value="{{ site.id }}" {% if acta.site_id == site.id %}selected{% endif %}>{{ site.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-3"><label class="form-label">Tipo de acta</label><select class="form-select" name="act_type" required data-autocomplete-header="act_type"><option value="Entrega" {% if acta.act_type == 'Entrega' %}selected{% endif %}>Entrega</option><option value="Cambio" {% if acta.act_type == 'Cambio' %}selected{% endif %}>Cambio</option></select></div>
+        <div class="col-md-3"><label class="form-label">Caso GLPI</label><input class="form-control bandera-glpi" name="glpi_case_number" value="{{ acta.glpi_case_number|default:'' }}" required data-case-number></div>
+        <div class="col-md-4"><label class="form-label">Campaña{% if has_campaigns %} *{% endif %}</label><select class="form-select" name="campaign_id" {% if has_campaigns %}required{% endif %}><option value="">Seleccione</option>{% for campaign in campaigns %}<option value="{{ campaign.pk }}" {% if acta.campaign_id == campaign.pk %}selected{% endif %}>{{ campaign.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Proceso o portafolio</label><input class="form-control" name="portfolio" list="portfolio-options" value="{{ acta.portfolio|default:'' }}" data-autocomplete-header="portfolio"><datalist id="portfolio-options">{% for portfolio in portfolios %}<option value="{{ portfolio.name }}">{% endfor %}</datalist></div>
+        <div class="col-md-4"><label class="form-label">Receptor del activo *</label><select class="form-select" name="receiver_id" required><option value="">Seleccione</option>{% for profile in receivers %}<option value="{{ profile.user_id }}" {% if acta.receiver_id == profile.user_id %}selected{% endif %}>{{ profile.user.get_full_name|default:profile.user.username }}</option>{% endfor %}</select></div>
+      </div>
+    </section>
+
+    {% for section in sections %}
+    <section class="form-section card-synerjoy p-3 mb-4">
+      <h3 class="section-title">{{ forloop.counter|add:1 }}. {{ section.label }}</h3>
+      <div class="row g-3">
+        {% for row in section.rows %}
+        {% with field=row.field field_name=row.field_name field_value=row.field_value %}
+        <div class="col-md-6 {% if field.key|slice:'-14:' == 'observaciones' %}col-md-12{% endif %}">
+          <label class="form-label">{{ field.label }}{% if field.required %} *{% endif %}</label>
+          {% if field.field_type == 'boolean' %}
+          <div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" name="{{ field_name }}" id="{{ field_name }}" data-autocomplete-field="{{ field.label }}" {% if field_value %}checked{% endif %}><label class="form-check-label" for="{{ field_name }}">Sí / aplica</label></div>
+          {% elif field.field_type == 'choice' %}
+          <select class="form-select" name="{{ field_name }}" data-autocomplete-field="{{ field.label }}"><option value="">Seleccione</option>{% for option in field.options %}<option value="{{ option }}" {% if field_value == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+          {% elif section.key == 'observaciones' %}
+          <textarea class="form-control" rows="4" name="{{ field_name }}" data-autocomplete-field="{{ field.label }}">{{ field_value|default:'' }}</textarea>
+          {% else %}
+          <input class="form-control" name="{{ field_name }}" value="{{ field_value|default:'' }}" data-autocomplete-field="{{ field.label }}" {% if field.required %}required{% endif %}>
+          {% endif %}
+        </div>
+        {% endwith %}
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+
+    <section class="form-section card-synerjoy p-3 mb-4">
+      <h3 class="section-title">Compromisos legales</h3>
+      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" required id="legal1" name="legal_custody_accepted" {% if acta.legal_custody_accepted %}checked{% endif %}><label class="form-check-label" for="legal1">Acepto la custodia, uso responsable y devolución de los activos asignados.</label></div>
+      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" required id="legal2" name="legal_accuracy_confirmed" {% if acta.legal_accuracy_confirmed %}checked{% endif %}><label class="form-check-label" for="legal2">Confirmo que la información registrada es completa y veraz.</label></div>
+      <div class="form-check"><input class="form-check-input" type="checkbox" required id="legal3" name="legal_data_processing_accepted" {% if acta.legal_data_processing_accepted %}checked{% endif %}><label class="form-check-label" for="legal3">Acepto el tratamiento de la información para la gestión del acta.</label></div>
+    </section>
+
+    <div class="d-flex justify-content-end gap-2 mt-4 mobile-stack">
+      <a href="/actas/" class="btn btn-outline-synerjoy touch-target" onclick="return confirm('¿Salir sin guardar el acta?');">Cancelar</a>
+      <button class="btn btn-outline-synerjoy touch-target" type="submit" formaction="{% url 'html-acta-preview-draft' %}" formtarget="_blank" formnovalidate>Vista previa PDF</button>
+      <button class="btn btn-primary-synerjoy touch-target" type="submit">{% if acta %}Guardar correcciones y reenviar{% else %}Guardar acta{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const glpiButton = document.getElementById('glpiButton');
+  const caseInput = document.querySelector('[data-case-number]');
+  const setField = (label, value) => {
+    const control = document.querySelector(`[data-autocomplete-field="${CSS.escape(label)}"]`);
+    if (!control) return;
+    if (control.type === 'checkbox') control.checked = Boolean(value);
+    else control.value = value ?? '';
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const portfolioInput = document.querySelector('[data-autocomplete-header="portfolio"]');
+  portfolioInput.addEventListener('change', async () => {
+    const name = portfolioInput.value.trim();
+    if (!name) return;
+    try {
+      const response = await fetch(`{% url 'html-portfolio-autocomplete' %}?name=${encodeURIComponent(name)}`, { headers: { 'Accept': 'application/json' } });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) return;
+      Object.entries(payload.fields || {}).forEach(([label, value]) => setField(label, value));
+    } catch (error) { console.error('No se pudo cargar el cat?logo del portafolio.', error); }
+  });
+  glpiButton.addEventListener('click', async () => {
+    const caseNumber = caseInput.value.trim();
+    if (!caseNumber) { caseInput.focus(); alert('Escribe primero el número de caso GLPI.'); return; }
+    glpiButton.classList.add('is-loading'); glpiButton.disabled = true;
+    try {
+      const response = await fetch(`{% url 'html-glpi-autocomplete' %}?case_number=${encodeURIComponent(caseNumber)}`, { headers: { 'Accept': 'application/json' } });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || 'No se encontró el caso.');
+      caseInput.value = payload.case.case_number;
+      const portfolioControl = document.querySelector('[data-autocomplete-header="portfolio"]');
+      portfolioControl.value = payload.case.portfolio || '';
+      portfolioControl.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('[data-autocomplete-header="act_type"]').value = payload.case.act_type || 'Entrega';
+      const siteSelect = document.querySelector('[data-autocomplete-site]');
+      let siteOption = [...siteSelect.options].find(option => option.value === String(payload.case.site_id));
+      if (!siteOption && payload.case.site_id) { siteOption = new Option(payload.case.site, payload.case.site_id); siteSelect.add(siteOption); }
+      if (siteOption) siteSelect.value = siteOption.value;
+      setField('Nombre completo', payload.case.user_name);
+      setField('Cédula', payload.case.document);
+      Object.entries(payload.fields || {}).forEach(([label, value]) => setField(label, value));
+      const mode = payload.simulation ? 'simulación local' : 'GLPI';
+      alert(`Datos cargados correctamente desde ${mode}.`);
+    } catch (error) { alert(error.message); }
+    finally { glpiButton.classList.remove('is-loading'); glpiButton.disabled = false; }
+  });
+</script>
+{% endblock %}

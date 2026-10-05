@@ -1,0 +1,380 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Synerjoy BPO{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --synerjoy-dark: #071d2d;
+        --synerjoy-blue: #0d3b66;
+        --synerjoy-cyan: #5bc0eb;
+        --synerjoy-green: #3ecf8e;
+        --synerjoy-white: #ffffff;
+        --synerjoy-soft: #f3f6f8;
+        --synerjoy-border: #d7e1e7;
+        --surface: #ffffff;
+        --surface-raised: #ffffff;
+        --input-surface: #ffffff;
+        --text: #18314f;
+        --muted: #5e7387;
+        --heading: #071d2d;
+        --link: #0d3b66;
+        --danger: #c83c45;
+        --warning: #5bc0eb;
+        --bs-primary: var(--synerjoy-blue);
+        --bs-secondary: var(--muted);
+        --bs-success: var(--synerjoy-green);
+        --bs-info: var(--synerjoy-cyan);
+        --bs-warning: var(--synerjoy-cyan);
+        --bs-danger: var(--danger);
+        --bs-light: var(--synerjoy-soft);
+        --bs-dark: var(--synerjoy-dark);
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+        background: var(--surface);
+        color: var(--text);
+      }
+      body.dark-mode {
+        --synerjoy-soft: #193344;
+        --synerjoy-border: #35566b;
+        --surface: #0b1720;
+        --surface-raised: #122331;
+        --input-surface: #102532;
+        --text: #e6f1f6;
+        --muted: #b7cbd7;
+        --heading: #f0f6fa;
+        --link: #83d9f4;
+        --bs-body-bg: #0b1720;
+        --bs-body-color: #e6f1f6;
+        --bs-primary: #83d9f4;
+        --bs-secondary: #b7cbd7;
+        background: var(--surface);
+        color: var(--text);
+        color-scheme: dark;
+      }
+      .dark-mode .card, .dark-mode .card-synerjoy, .dark-mode .sidebar-card,
+      .dark-mode .list-group-item, .dark-mode .modal-content,
+      .dark-mode .dropdown-menu, .dark-mode .offcanvas {
+        background: var(--surface-raised);
+        color: var(--text);
+        border-color: var(--synerjoy-border);
+      }
+      .dark-mode .bg-light { background: var(--synerjoy-soft) !important; color: var(--text); }
+      .dark-mode .bg-white:not(.excel-preview) { background: var(--surface-raised) !important; color: var(--text) !important; }
+      .dark-mode .text-dark { color: var(--text) !important; }
+      .dark-mode .text-muted, .dark-mode .text-secondary { color: var(--muted) !important; }
+      .dark-mode h1, .dark-mode h2, .dark-mode h3, .dark-mode h4,
+      .dark-mode h5, .dark-mode h6, .dark-mode .section-title { color: var(--heading); }
+      .dark-mode .hero-panel h1, .dark-mode .hero-panel h2,
+      .dark-mode .hero-panel h3, .dark-mode .hero-panel h4 { color: #ffffff; }
+      .dark-mode a:not(.btn):link, .dark-mode a:not(.btn):visited { color: var(--link); }
+      .dark-mode .text-primary, .dark-mode .text-info, .dark-mode .text-warning { color: var(--link) !important; }
+      .dark-mode .text-success { color: #67d9a8 !important; }
+      .dark-mode .btn-outline-synerjoy, .dark-mode .btn-outline-secondary {
+        color: var(--link);
+        border-color: var(--link);
+      }
+      .dark-mode .btn-outline-synerjoy:hover, .dark-mode .btn-outline-secondary:hover {
+        background: #17445b;
+        color: #ffffff;
+      }
+      .dark-mode .form-control, .dark-mode .form-select, .dark-mode .form-check-input {
+        background-color: var(--input-surface);
+        border-color: var(--synerjoy-border);
+        color: var(--text);
+      }
+      .dark-mode .form-control::placeholder { color: #a8bdc9; opacity: 1; }
+      .dark-mode .form-select option { background: var(--surface-raised); color: var(--text); }
+      .dark-mode .table {
+        --bs-table-bg: var(--surface-raised);
+        --bs-table-color: var(--text);
+        --bs-table-border-color: var(--synerjoy-border);
+        --bs-table-striped-bg: #173041;
+        --bs-table-hover-bg: #203c4e;
+        --bs-table-hover-color: var(--text);
+      }
+      .dark-mode .table th { color: var(--muted); }
+      .dark-mode .border, .dark-mode .border-top, .dark-mode .border-bottom { border-color: var(--synerjoy-border) !important; }
+      .dark-mode .status-draft { background: #243a61; color: #d2e0ff; }
+      .dark-mode .status-pending { background: #493a1e; color: #ffe1a1; }
+      .dark-mode .status-completed { background: #173f32; color: #a8f0cc; }
+      .dark-mode .status-rejected { background: #4a272c; color: #ffc4c8; }
+      .dark-mode .bg-success-subtle, .dark-mode .semaphore-approved { background: #173a2e !important; color: #c9f5df !important; }
+      .dark-mode .bg-warning-subtle, .dark-mode .semaphore-pending { background: #493a1e !important; color: #ffe1a1 !important; }
+      .dark-mode .bg-danger-subtle, .dark-mode .semaphore-rejected { background: #43262a !important; color: #ffd9dc !important; }
+      .dark-mode .bandera-glpi { background: #173747; border-color: #36718b; color: #d7f1fb; }
+      .dark-mode .alert-info, .dark-mode .alert-warning { --bs-alert-color: #d7f1fb; --bs-alert-bg: #173747; --bs-alert-border-color: #36718b; }
+      .dark-mode .alert-success { --bs-alert-color: #c9f5df; --bs-alert-bg: #173a2e; --bs-alert-border-color: #327c5c; }
+      .dark-mode .alert-danger { --bs-alert-color: #ffd9dc; --bs-alert-bg: #43262a; --bs-alert-border-color: #9b4851; }
+      .dark-mode .offcanvas { background: var(--surface-raised); color: var(--text); }
+      .dark-mode .excel-preview { background: #ffffff !important; color: #1b2b34 !important; }
+      .dark-mode .excel-preview h3 { color: #1b2b34; }
+      .dark-mode { --bs-light: #193344; }
+      .navbar-synerjoy {
+        background: var(--synerjoy-dark);
+        box-shadow: 0 4px 18px rgba(7, 29, 45, 0.18);
+      }
+      .brand-mark {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: white;
+        font-weight: 700;
+      }
+      .brand-mark .logo-box {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, var(--synerjoy-cyan), var(--synerjoy-green));
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        color: var(--synerjoy-dark);
+        font-weight: 800;
+      }
+      .page-shell {
+        padding: 30px 0 60px;
+      }
+      .card-synerjoy {
+        border: 1px solid var(--synerjoy-border);
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(17, 32, 48, 0.06);
+      }
+      .btn-primary-synerjoy {
+        background: var(--synerjoy-blue);
+        color: white;
+        border: none;
+      }
+      .btn-primary-synerjoy:hover, .btn-primary:hover { background: var(--synerjoy-dark); color: white; }
+      .btn-success-synerjoy {
+        background: var(--synerjoy-green);
+        color: var(--synerjoy-dark);
+        border: none;
+      }
+      .btn-success-synerjoy:hover, .btn-success:hover { background: #2caf75; color: var(--synerjoy-dark); }
+      .btn-outline-synerjoy {
+        border-color: var(--synerjoy-blue);
+        color: var(--synerjoy-blue);
+      }
+      .btn-outline-synerjoy:hover { background: var(--synerjoy-blue); color: white; }
+      .btn-primary { --bs-btn-bg: var(--synerjoy-blue); --bs-btn-border-color: var(--synerjoy-blue); --bs-btn-hover-bg: var(--synerjoy-dark); --bs-btn-hover-border-color: var(--synerjoy-dark); }
+      .btn-success { --bs-btn-bg: var(--synerjoy-green); --bs-btn-border-color: var(--synerjoy-green); --bs-btn-color: var(--synerjoy-dark); --bs-btn-hover-bg: #2caf75; --bs-btn-hover-border-color: #2caf75; }
+      .btn-danger { --bs-btn-bg: var(--danger); --bs-btn-border-color: var(--danger); }
+      .btn-outline-danger { --bs-btn-color: var(--danger); --bs-btn-border-color: var(--danger); --bs-btn-hover-bg: var(--danger); --bs-btn-hover-border-color: var(--danger); }
+      .btn-outline-secondary { --bs-btn-color: var(--synerjoy-blue); --bs-btn-border-color: var(--synerjoy-blue); --bs-btn-hover-bg: var(--synerjoy-blue); --bs-btn-hover-border-color: var(--synerjoy-blue); }
+      .text-primary { color: var(--synerjoy-blue) !important; }
+      .text-success { color: #16845a !important; }
+      .text-warning, .text-info { color: var(--synerjoy-blue) !important; }
+      .bg-light { background-color: var(--synerjoy-soft) !important; }
+      .bg-success-subtle, .semaphore-approved { background: rgba(62, 207, 142, .14) !important; color: #126443; }
+      .bg-warning-subtle, .semaphore-pending { background: rgba(91, 192, 235, .16) !important; color: var(--synerjoy-blue); }
+      .bg-danger-subtle, .semaphore-rejected { background: rgba(200, 60, 69, .12) !important; color: #922c35; }
+      .badge-synerjoy { background: var(--synerjoy-cyan); color: var(--synerjoy-dark); }
+      .badge { background: var(--synerjoy-cyan); color: var(--synerjoy-dark); }
+      .alert-info, .alert-warning { --bs-alert-color: var(--synerjoy-blue); --bs-alert-bg: rgba(91, 192, 235, .14); --bs-alert-border-color: var(--synerjoy-cyan); }
+      .alert-success { --bs-alert-color: #126443; --bs-alert-bg: rgba(62, 207, 142, .14); --bs-alert-border-color: var(--synerjoy-green); }
+      .alert-danger { --bs-alert-color: #922c35; --bs-alert-bg: rgba(200, 60, 69, .12); --bs-alert-border-color: var(--danger); }
+      .progress-bar { background: var(--synerjoy-green); }
+      .offcanvas { background: var(--synerjoy-white); color: var(--text); }
+      .offcanvas-header { background: var(--synerjoy-dark); color: white; }
+      .offcanvas-header .btn-close { filter: invert(1); }
+      .drawer-item { border: 1px solid var(--synerjoy-border); border-radius: 10px; background: var(--synerjoy-soft); color: var(--text); }
+      .status-pill {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 0.77rem;
+        font-weight: 700;
+      }
+      .status-draft { background: #e9f0ff; color: #3158b5; }
+      .status-pending { background: #fff1d8; color: #936600; }
+      .status-completed { background: #e4f8ee; color: #0f7d4f; }
+      .status-rejected { background: #fde7e7; color: #b72d2d; }
+      .hero-panel {
+        background: linear-gradient(135deg, var(--synerjoy-dark), var(--synerjoy-blue));
+        color: white;
+        border-radius: 18px;
+      }
+      .sidebar-card {
+        background: white;
+        border: 1px solid var(--synerjoy-border);
+        border-radius: 16px;
+      }
+      .table th {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      .login-wrap {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(180deg, #071d2d 0%, #0d3b66 100%);
+      }
+      .login-card {
+        width: min(430px, 92vw);
+        background: rgba(255,255,255,0.98);
+        border-radius: 22px;
+        padding: 32px 28px;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.24);
+      }
+      .login-logo {
+        width: 90px;
+        height: 90px;
+        border-radius: 20px;
+        background: linear-gradient(135deg, var(--synerjoy-cyan), var(--synerjoy-green));
+        margin: 0 auto 18px;
+        display: grid;
+        place-items: center;
+        font-weight: 800;
+        color: var(--synerjoy-dark);
+        font-size: 1.8rem;
+      }
+      .alert-floating {
+        position: sticky;
+        top: 80px;
+      }
+      .section-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--synerjoy-dark);
+      }
+      .timeline-entry {
+        position: relative;
+        padding-left: 24px;
+        border-left: 2px solid var(--synerjoy-border);
+        margin-left: 10px;
+      }
+      .timeline-entry::before {
+        content: "";
+        position: absolute;
+        left: -7px;
+        top: 8px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--synerjoy-green);
+      }
+      .bandera-glpi { background: #e8f8ff; border: 1px dashed #7ecce8; }
+      .compact-text { font-size: 0.9rem; }
+      .breadcrumb { --bs-breadcrumb-divider: '›'; }
+      .form-section { border-left: 4px solid var(--synerjoy-cyan); }
+      .signature-pad { width: 100%; height: 240px; border: 2px dashed var(--synerjoy-cyan); border-radius: 12px; background: #fff; touch-action: none; }
+      .signature-thumbnail { display: block; max-width: 220px; max-height: 80px; margin: 8px 0; border: 1px solid var(--synerjoy-border); background: #fff; }
+      .loading-state { display: none; }
+      .is-loading .loading-state { display: inline-flex; }
+      .is-loading .loading-label { display: none; }
+      .navbar-toggler { border-color: rgba(255,255,255,.55); }
+      .navbar-toggler-icon { filter: invert(1); }
+      .offcanvas { --bs-offcanvas-width: min(420px, 92vw); }
+      .touch-target { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; }
+      .form-control, .form-select, .btn { min-height: 44px; }
+      .table-card-label { display: none; }
+      .mobile-stack { display: flex; flex-wrap: wrap; gap: .5rem; }
+      @media (max-width: 768px) {
+        .nav-link { font-size: 0.9rem; }
+        .hero-panel { padding: 1.25rem; }
+        .page-shell { padding-top: 18px; }
+        .card-synerjoy { border-radius: 12px; }
+        .display-6 { font-size: 2rem; }
+        .table-responsive { overflow-x: visible; }
+        .table-responsive > table { display: block; }
+        .table-responsive thead { display: none; }
+        .table-responsive tbody, .table-responsive tr, .table-responsive td { display: block; width: 100%; }
+        .table-responsive tr { background: var(--synerjoy-soft); border: 1px solid var(--synerjoy-border); border-radius: 12px; padding: .75rem; margin-bottom: .75rem; }
+        .table-responsive td { border: 0; padding: .35rem 0; text-align: left !important; min-height: 0; }
+        .table-responsive td::before { content: attr(data-label); display: inline-block; width: 38%; color: var(--muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; vertical-align: top; }
+        .table-responsive td:last-child::before { content: ''; }
+        .table-responsive td[colspan] { text-align: center !important; }
+        .table-responsive td[colspan]::before { display: none; }
+      }
+      @media (max-width: 575.98px) {
+        body { font-size: .95rem; }
+        .container { padding-left: 12px; padding-right: 12px; }
+        .navbar-brand span { font-size: .95rem; }
+        .navbar-nav { padding-top: .75rem; }
+        .navbar-nav .nav-item { margin-bottom: .35rem; }
+        .navbar-nav .d-flex { align-items: stretch !important; flex-direction: column; }
+        .navbar-nav .d-flex form, .navbar-nav .d-flex form button { width: 100%; }
+        .page-shell h2 { font-size: 1.45rem; }
+        .page-shell h3 { font-size: 1.05rem; }
+        .form-section { padding: .9rem !important; }
+        .form-section .row { --bs-gutter-x: .75rem; --bs-gutter-y: .75rem; }
+        .form-section .col-md-3, .form-section .col-md-6, .form-section .col-12 { width: 100%; }
+        .signature-pad { height: 190px; min-height: 180px; }
+        .signature-thumbnail { max-width: 100%; }
+        .mobile-stack > *, .d-flex.gap-2 > .btn, .d-flex.gap-2 > a.btn { width: 100%; }
+        .btn-group { width: 100%; }
+        .btn-group > .btn { flex: 1 1 auto; }
+        .offcanvas { --bs-offcanvas-width: 100vw; }
+        .offcanvas-body { padding: 1rem; }
+      }
+    </style>
+  </head>
+  <body>
+    {% if is_test_environment %}<div class="text-center py-2 fw-bold" style="background:#ffc107;color:#071d2d;letter-spacing:.04em">AMBIENTE DE PRUEBAS — los datos y acciones son independientes de producción</div>{% endif %}
+    <nav class="navbar navbar-expand-lg navbar-synerjoy text-white sticky-top">
+      <div class="container">
+        <a class="navbar-brand brand-mark" href="/accounts/dashboard/">
+          <div class="logo-box">S</div>
+          <span>Synerjoy BPO</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navMain">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-3">
+            <li class="nav-item"><a class="nav-link text-white" href="/accounts/dashboard/">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link text-white" href="/actas/">Actas</a></li>
+            {% if user.is_authenticated and current_role in 'SUPERVISOR_ONE SUPERVISOR_TWO' %}<li class="nav-item"><a class="nav-link text-white" href="/actas/review/">Revisión</a></li>{% endif %}
+            <li class="nav-item"><button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="offcanvas" data-bs-target="#notificationDrawer" aria-controls="notificationDrawer" title="Notificaciones">Campana{% if notifications %} ({{ notifications|length }}){% endif %}</button></li>
+            {% if user.is_authenticated and current_role in 'ADMIN SUPERVISOR_ONE SUPERVISOR_TWO AUDITOR' %}<li class="nav-item"><a class="nav-link text-white" href="/accounts/reports/">Reportes</a></li>{% endif %}
+            {% if pilot_active and user.is_authenticated %}<li class="nav-item"><button class="btn btn-sm btn-warning" type="button" data-bs-toggle="modal" data-bs-target="#pilotFeedbackModal">Reportar problema o sugerencia</button></li>{% endif %}
+            {% if current_role == 'ADMIN' %}<li class="nav-item"><a class="nav-link text-white" href="/admin/">Administración</a></li>{% endif %}
+            {% if current_role == 'TECHNICIAN' or current_role == 'SUPERVISOR_ONE' or current_role == 'SUPERVISOR_TWO' %}<li class="nav-item"><a class="nav-link text-white" href="{% url 'accounts:supervisor-signature' %}">Mi firma digital</a></li>{% endif %}
+            <li class="nav-item"><button class="btn btn-sm btn-outline-light" id="themeToggle" type="button" title="Cambiar tema">Tema</button></li>
+            <li class="nav-item ms-lg-3 d-flex align-items-center gap-2">
+              <span class="small text-white">{{ user.get_full_name|default:user.username }} · {{ role_label|default:'Usuario' }}</span>
+              <form method="post" action="{% url 'logout' %}" onsubmit="return confirm('¿Deseas cerrar sesión?');">
+                {% csrf_token %}
+                <button class="btn btn-sm btn-outline-light" type="submit">Cerrar sesión</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    {% if pilot_active and user.is_authenticated %}<div class="modal fade" id="pilotFeedbackModal" tabindex="-1" aria-labelledby="pilotFeedbackTitle" aria-hidden="true"><div class="modal-dialog"><form class="modal-content" method="post" action="{% url 'accounts:pilot-feedback' %}">{% csrf_token %}<input type="hidden" name="page" value="{{ request.path }}"><div class="modal-header"><h5 class="modal-title" id="pilotFeedbackTitle">Retroalimentación del piloto</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><label class="form-label" for="pilotCategory">Tipo</label><select class="form-select mb-3" id="pilotCategory" name="category"><option value="ISSUE">Problema</option><option value="SUGGESTION">Sugerencia</option><option value="QUESTION">Duda</option></select><label class="form-label" for="pilotMessage">Cuéntanos qué ocurrió o qué podemos mejorar</label><textarea class="form-control" id="pilotMessage" name="message" maxlength="5000" rows="5" required></textarea></div><div class="modal-footer"><button class="btn btn-primary" type="submit">Enviar comentario</button></div></form></div></div>{% endif %}
+
+    <aside class="offcanvas offcanvas-end" tabindex="-1" id="notificationDrawer" aria-labelledby="notificationDrawerLabel">
+      <div class="offcanvas-header"><h5 id="notificationDrawerLabel">Notificaciones</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button></div>
+      <div class="offcanvas-body"><div class="d-grid gap-2">{% for item in notifications %}<button class="drawer-item text-start p-3" type="button" data-bs-toggle="modal" data-bs-target="#notificationModal{{ forloop.counter }}"><strong>{{ item.title }}</strong><span class="d-block small mt-1">{{ item.description }}</span><span class="d-block small text-secondary mt-2">{{ item.time }}</span></button>{% empty %}<p class="text-muted">No hay notificaciones.</p>{% endfor %}</div><a class="btn btn-outline-synerjoy w-100 mt-3" href="/accounts/notifications/">Ver bandeja completa</a></div>
+    </aside>
+    {% for item in notifications %}<div class="modal fade" id="notificationModal{{ forloop.counter }}" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">{{ item.title }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>{{ item.description }}</p><small class="text-secondary">{{ item.time }}</small></div></div></div></div>{% endfor %}
+
+    <main class="page-shell">
+      <div class="container">
+        {% if request.path != '/accounts/dashboard/' %}<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="/accounts/dashboard/">Inicio</a></li><li class="breadcrumb-item active">{{ title|default:'Página' }}</li></ol></nav>{% endif %}
+        {% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>{% endfor %}
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const themeToggle = document.getElementById('themeToggle');
+      if (localStorage.getItem('synerjoy-theme') === 'dark') document.body.classList.add('dark-mode');
+      themeToggle?.addEventListener('click', () => { document.body.classList.toggle('dark-mode'); localStorage.setItem('synerjoy-theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light'); });
+      document.querySelectorAll('form[data-unsaved]').forEach(form => { let changed = false; form.addEventListener('input', () => changed = true); form.addEventListener('submit', () => changed = false); window.addEventListener('beforeunload', event => { if (changed) { event.preventDefault(); event.returnValue = ''; } }); });
+    </script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

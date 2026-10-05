@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Administrador{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <p class="text-uppercase text-secondary small fw-bold mb-1">Rol</p>
+    <h2 class="mb-0">Administrador</h2>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card card-synerjoy p-3 h-100">
+      <h3 class="section-title">Usuarios</h3>
+      <div class="list-group list-group-flush mt-3">
+        {% for account in users %}<div class="list-group-item px-0 d-flex justify-content-between"><span>{{ account.username }}</span><small class="text-muted">{{ account.role_profile.get_role_display|default:'Sin rol' }}</small></div>{% empty %}<div class="text-muted">No hay usuarios.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="card card-synerjoy p-3 h-100">
+      <h3 class="section-title">Gestión de roles</h3>
+      <table class="table mt-3">
+        <thead>
+          <tr><th>Usuario</th><th>Rol</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          {% for account in users %}<tr><td>{{ account.username }}</td><td>{{ account.role_profile.get_role_display|default:'Sin rol' }}</td><td><span class="status-pill {% if account.is_active %}status-completed{% else %}status-rejected{% endif %}">{% if account.is_active %}Activo{% else %}Inactivo{% endif %}</span></td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

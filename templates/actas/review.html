@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Revisión{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <h2 class="mb-4">Revisión y aprobación</h2>
+  {% for row in review_rows %}
+  {% with acta=row.acta %}
+  <form method="post" class="border rounded p-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-3" onsubmit="return this.action.value !== 'reject' || Boolean(this.reason.value.trim())">
+    {% csrf_token %}
+    <input type="hidden" name="acta_id" value="{{ acta.id }}">
+    <div>
+      <div class="fw-bold">{{ acta.glpi_case_number|default:'Sin caso' }}</div>
+      <small class="text-muted">{{ acta.get_status_display }} · {{ acta.assigned_technician.username }}</small>
+      <div class="mt-3"><div class="small fw-bold text-uppercase text-secondary mb-2">Firmas registradas hasta el momento</div><div class="d-flex flex-wrap gap-2">{% for signature in row.signatures %}<span class="status-pill status-completed">{{ signature.get_signature_type_display }}: {{ signature.signer_name }} · {{ signature.signed_at|date:"d/m/Y H:i" }}</span>{% empty %}<span class="text-muted small">Aún no hay firmas.</span>{% endfor %}</div></div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'html-acta-preview' acta.public_id %}" target="_blank">Ver acta completa</a>
+      <input class="form-control form-control-sm" name="reason" placeholder="Motivo si rechaza">
+      <a class="btn btn-success btn-sm" href="{% url 'html-acta-sign' acta.public_id %}">Firmar y aprobar</a>
+      <button class="btn btn-danger btn-sm" type="submit" name="action" value="reject">Rechazar</button>
+    </div>
+  </form>
+  {% endwith %}
+  {% empty %}
+  <p class="text-muted mb-0">No hay actas pendientes de revisión.</p>
+  {% endfor %}
+</div>
+{% endblock %}

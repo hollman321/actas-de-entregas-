@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Auditoría{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Auditoría</h2>
+    <span class="status-pill status-completed">Solo lectura</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr><th>Acta</th><th>Estado</th><th>Responsable</th><th>Fecha</th></tr>
+      </thead>
+      <tbody>
+        {% for acta in latest_actas %}
+        <tr>
+          <td>{{ acta.glpi_case_number|default:'Sin número' }}</td>
+          <td>{{ acta.get_status_display }}</td>
+          <td>{{ acta.assigned_technician.username }}</td>
+          <td>{{ acta.created_at|date:"d/m/Y" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

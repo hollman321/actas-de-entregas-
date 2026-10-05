@@ -1,0 +1,97 @@
+<style>
+  .acta-document { max-width: 1000px; margin: 0 auto; padding: 24px; color: #17212b; background: #fff; border: 1px solid #7b8791; font: 11px Arial, sans-serif; }
+  .acta-document h2 { margin: 12px 0 0; padding: 5px; text-align: center; font-size: 13px; background: #dce6f1; border: 1px solid #7b8791; text-transform: uppercase; }
+  .acta-title { display: grid; grid-template-columns: 1fr auto; align-items: center; border: 1px solid #7b8791; padding: 10px; }
+  .acta-title strong { font-size: 15px; text-align: center; }
+  .acta-title small { white-space: pre-line; }
+  .acta-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #7b8791; border-left: 1px solid #7b8791; }
+  .acta-cell { min-height: 30px; padding: 6px; border-right: 1px solid #7b8791; border-bottom: 1px solid #7b8791; overflow-wrap: anywhere; }
+  .acta-cell.wide { grid-column: 1 / -1; }
+  .acta-cell strong { font-weight: 700; }
+  .acta-checkbox { display: inline-block; margin-right: 18px; white-space: nowrap; }
+  .acta-observations { min-height: 75px; border: 1px solid #7b8791; padding: 8px; white-space: pre-wrap; }
+  .acta-commitments { border: 1px solid #7b8791; padding: 9px; white-space: pre-line; line-height: 1.35; }
+  .acta-signatures { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #7b8791; border-left: 1px solid #7b8791; }
+  .acta-signature { min-height: 125px; padding: 7px; border-right: 1px solid #7b8791; border-bottom: 1px solid #7b8791; }
+  .acta-signature-title { min-height: 24px; padding-bottom: 4px; text-align: center; font-weight: 700; border-bottom: 1px solid #aab2b8; }
+  .acta-signature img { display: block; max-width: 130px; max-height: 46px; margin: 4px auto; }
+  .acta-document .muted { color: #626b73; }
+  @page { size: letter portrait; margin: 8mm; }
+  @media print {
+    .acta-document { width: auto; max-width: none; margin: 0; padding: 0; border: 0; }
+    .acta-document h2 { break-after: avoid; page-break-after: avoid; }
+    .acta-title, .acta-cell, .acta-document h2, .acta-observations,
+    .acta-commitments, .acta-signatures, .acta-signature {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .acta-signature { overflow-wrap: anywhere; }
+    .no-print, nav, .breadcrumb { display: none !important; }
+  }
+  @media (max-width: 700px) { .acta-document { padding: 10px; } .acta-signatures { grid-template-columns: repeat(2, 1fr); } }
+</style>
+<article class="acta-document">
+  <header class="acta-title">
+    <strong>ACTA DE ENTREGA Y/O CAMBIO DE ACTIVOS TECNOL&Oacute;GICOS</strong>
+    <small>Clasificaci&oacute;n: Privado<br>Versi&oacute;n: 1.0<br>Fecha formato: 24/02/2026</small>
+  </header>
+  <div class="acta-grid">
+    <div class="acta-cell"><strong>Fecha del acta:</strong> {{ acta.act_date|date:"d/m/Y"|default:"N.A." }}</div>
+    <div class="acta-cell"><strong>Sede:</strong> {{ acta.site.name|default:"N.A." }}</div>
+    <div class="acta-cell wide"><strong>Tipo de acta:</strong>
+      <span class="acta-checkbox">Entrega [ {% if acta.act_type == "Entrega" %}SÍ{% else %}NO APLICA{% endif %} ]</span>
+      <span class="acta-checkbox">Cambio [ {% if acta.act_type == "Cambio" %}SÍ{% else %}NO APLICA{% endif %} ]</span>
+    </div>
+    <div class="acta-cell"><strong>N.º caso GLPI:</strong> {{ acta.glpi_case_number|default:"N.A." }}</div>
+    <div class="acta-cell"><strong>Campaña:</strong> {{ acta.campaign.name|default:"N.A." }}</div>
+    <div class="acta-cell"><strong>Proceso / portafolio:</strong> {{ acta.portfolio|default:"N.A." }}</div>
+  </div>
+
+  {% for section in document_sections %}
+    {% if section.key != "usuario" %}<h2>{{ section.title }}</h2>{% endif %}
+    {% if section.key == "usuario" %}
+      <div class="acta-grid">{% for field in section.fields %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endfor %}</div>
+    {% elif section.key == "sistemas" %}
+      <div class="acta-grid">
+        <div class="acta-cell wide"><strong>Tipo de acceso:</strong>
+          <span class="acta-checkbox">Red [ {% if account_red %}SÍ{% else %}NO APLICA{% endif %} ]</span>
+          <span class="acta-checkbox">Correo [ {% if account_email %}SÍ{% else %}NO APLICA{% endif %} ]</span>
+        </div>
+        {% for field in section.fields %}{% if field.label != "Tipo de cuenta" and field.label != "Acceso a red" and field.label != "Acceso a correo" %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endif %}{% endfor %}
+      </div>
+    {% elif section.key == "equipo" %}
+      <div class="acta-grid">
+        <div class="acta-cell wide"><span class="acta-checkbox">Desktop [ {% if equipment_type == "desktop" %}SI{% else %}NO APLICA{% endif %} ]</span><span class="acta-checkbox">Port&aacute;til [ {% if "port" in equipment_type %}SI{% else %}NO APLICA{% endif %} ]</span></div>
+        <div class="acta-cell"><strong>Equipo/Modelo:</strong> {{ equipment_model }}</div>
+        {% for field in section.fields %}{% if field.label != "Tipo de equipo" and field.label != "Marca" and field.label != "Modelo" %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endif %}{% endfor %}
+      </div>
+    {% elif section.key == "perifericos" %}
+      <div class="acta-grid">
+        {% for field in peripheral_checks %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endfor %}
+        {% for field in peripheral_details %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endfor %}
+      </div>
+    {% else %}
+      {% if section.key == "monitor" %}
+        <div class="acta-grid"><div class="acta-cell"><strong>Marca/Modelo:</strong> {{ monitor_model }}</div>{% for field in section.fields %}{% if field.label != "Marca" and field.label != "Modelo" %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endif %}{% endfor %}</div>
+      {% else %}
+        <div class="acta-grid">{% for field in section.fields %}<div class="acta-cell"><strong>{{ field.label }}:</strong> {{ field.value }}</div>{% endfor %}</div>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+
+  <h2>Observaciones</h2>
+  <div class="acta-observations">{{ observations|default:"N.A." }}</div>
+  <h2>Compromisos</h2>
+  <div class="acta-commitments">{{ commitments_text }}</div>
+  <h2>Firmas</h2>
+  <div class="acta-signatures">
+    {% for signer in document_signatures %}
+      <div class="acta-signature">
+        <div class="acta-signature-title">{{ signer.label }}</div>
+        {% if signer.signature.signature_image %}<img src="{{ signer.signature.signature_image.url }}" alt="Firma de {{ signer.name }}">{% elif signer.signature.result == "APPROVED" and signer.label == "Recibe" %}<div class="muted text-center">Firma f?sica recibida; escaneo adjunto</div>{% elif signer.signature.result == "APPROVED" %}<div class="muted text-center">Firma registrada</div>{% else %}<div class="muted text-center">Firma pendiente</div>{% endif %}
+        <div><strong>Nombre:</strong> {{ signer.name }}</div>
+        <div><strong>Cargo:</strong> {{ signer.cargo }}</div>
+      </div>
+    {% endfor %}
+  </div>
+</article>

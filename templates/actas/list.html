@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Actas{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+    <h2 class="mb-0">Actas</h2>
+    <div class="d-flex gap-2"><button class="btn btn-outline-synerjoy" type="button" data-bs-toggle="offcanvas" data-bs-target="#filtersDrawer">Filtros</button>{% if role == "TECHNICIAN" %}<a href="/actas/new/" class="btn btn-primary-synerjoy">Nueva acta</a>{% endif %}</div>
+  </div>
+
+  <form class="row g-2 mb-4" method="get">
+    <div class="col-md-10">
+      <input class="form-control" type="text" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Buscar por caso, cartera o tipo">
+    </div>
+    <div class="col-md-2 d-grid">
+      <button class="btn btn-outline-synerjoy" type="submit">Buscar</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table align-middle table-hover">
+      <thead>
+        <tr>
+          <th>Acta</th>
+          <th>Estado</th>
+          <th>Tipo</th>
+          <th>Fecha</th>
+          <th>Responsable</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for acta in actas %}
+        <tr>
+          <td data-label="Acta"><a href="/actas/{{ acta.public_id }}/" class="fw-bold text-decoration-none">{{ acta.glpi_case_number|default:'Sin caso' }}</a></td>
+          <td data-label="Estado"><span class="status-pill {% if acta.status == 'COMPLETED' %}status-completed{% elif acta.status in 'REJECTED_BY_SUPERVISOR_ONE,REJECTED_BY_SUPERVISOR_TWO' %}status-rejected{% else %}status-pending{% endif %}">{{ acta.get_status_display }}</span></td>
+          <td data-label="Tipo">{{ acta.act_type|default:'N/A' }}</td>
+          <td data-label="Fecha">{{ acta.created_at|date:"d/m/Y" }}</td>
+          <td data-label="Responsable">{{ acta.assigned_technician.username }}</td>
+          <td data-label="Acciones" class="text-end"><div class="btn-group btn-group-sm"><a href="{% url 'html-acta-preview' acta.public_id %}" class="btn btn-outline-secondary touch-target" target="_blank">Ver</a><a href="{% url 'html-acta-export-xlsx' acta.public_id %}" class="btn btn-outline-synerjoy touch-target">Excel</a></div></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="text-center text-muted py-4">No hay actas disponibles.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<aside class="offcanvas offcanvas-end" tabindex="-1" id="filtersDrawer" aria-labelledby="filtersDrawerLabel">
+  <div class="offcanvas-header"><h5 id="filtersDrawerLabel">Filtros avanzados</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div>
+  <div class="offcanvas-body"><form method="get" class="d-grid gap-3"><div><label class="form-label">Estado</label><select class="form-select" name="status"><option value="">Todos</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div><label class="form-label">Tipo de acta</label><select class="form-select" name="act_type"><option value="">Todos</option><option value="Entrega" {% if request.GET.act_type == 'Entrega' %}selected{% endif %}>Entrega</option><option value="Cambio" {% if request.GET.act_type == 'Cambio' %}selected{% endif %}>Cambio</option></select></div><div><label class="form-label">Sede</label><select class="form-select" name="site"><option value="">Todas</option>{% for site in sites %}<option value="{{ site.id }}" {% if request.GET.site == site.id|stringformat:'s' %}selected{% endif %}>{{ site.name }}</option>{% endfor %}</select></div><button class="btn btn-primary w-100" type="submit">Aplicar filtros</button><a class="btn btn-outline-synerjoy w-100" href="/actas/">Limpiar filtros</a></form></div>
+</aside>
+{% endblock %}

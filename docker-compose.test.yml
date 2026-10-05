@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-actas_test}
+      POSTGRES_USER: ${DB_USER:-actas_test}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env.test}
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [test_network]
+
+  backend:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env.test
+    environment:
+      APP_ENV: testing
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-actas_test}
+      DB_USER: ${DB_USER:-actas_test}
+      DB_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en .env.test}
+      DJANGO_SECRET_KEY: ${SECRET_KEY:?Define SECRET_KEY en .env.test}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      GLPI_SIMULATION_MODE: "True"
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+      PILOT_MODE: ${PILOT_MODE:-True}
+      PILOT_END_DATE: ${PILOT_END_DATE:-}
+      PORT: ${PORT:-8001}
+    ports:
+      - "${PORT:-8001}:${PORT:-8001}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - test_media_data:/app/media
+      - test_static_data:/app/staticfiles
+    networks: [test_network]
+
+volumes:
+  test_postgres_data:
+  test_media_data:
+  test_static_data:
+
+networks:
+  test_network:
+    driver: bridge

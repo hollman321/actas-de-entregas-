@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Firma digital del usuario{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <h2>Firma PNG fija del usuario</h2>
+  <p>La firma PNG se aplicará cuando apruebes un acta. No es una firma física.</p>
+  {% if profile.digital_signature %}<div class="mb-3"><img src="{{ profile.digital_signature.url }}" alt="Vista previa de la firma digital" style="max-width:320px;max-height:120px"></div>{% endif %}
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label class="form-label" for="id_signature">Archivo PNG (máximo 1 MB)</label>
+    <input class="form-control" type="file" name="signature" id="id_signature" accept="image/png" required>
+    {% for error in form.signature.errors %}<div class="text-danger mt-2">{{ error }}</div>{% endfor %}
+    <button class="btn btn-primary-synerjoy mt-3" type="submit">Guardar firma</button>
+  </form>
+</div>
+{% endblock %}

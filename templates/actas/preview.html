@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Vista previa del acta{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+  <div><p class="text-uppercase small text-secondary fw-bold mb-1">Vista previa de exportación</p><h2 class="mb-0">Acta {{ acta.glpi_case_number }}</h2></div>
+  <div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{% url 'html-acta-detail' acta.public_id %}">Volver</a><button class="btn btn-primary-synerjoy" onclick="window.print()">Imprimir / Guardar PDF</button><a class="btn btn-primary-synerjoy" href="{% url 'html-acta-export-xlsx' acta.public_id %}">Descargar Excel</a></div>
+</div>
+{% include "actas/_acta_document.html" %}
+{% endblock %}

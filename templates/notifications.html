@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Notificaciones{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <h2 class="mb-3">Notificaciones</h2>
+  {% for item in notifications %}
+  <div class="d-flex align-items-start border rounded p-3 mb-3">
+    <div class="me-3 mt-1">
+      <span class="badge rounded-pill {% if item.type == 'warning' %}bg-warning text-dark{% elif item.type == 'danger' %}bg-danger{% else %}bg-success{% endif %}">●</span>
+    </div>
+    <div class="flex-grow-1">
+      <div class="fw-bold">{{ item.title }}</div>
+      <div class="small text-muted">{{ item.description }}</div>
+      <div class="small text-secondary mt-2">{{ item.time }}</div>
+    </div>
+  </div>
+  {% empty %}
+  <p class="text-muted mb-0">No hay notificaciones.</p>
+  {% endfor %}
+</div>
+{% endblock %}

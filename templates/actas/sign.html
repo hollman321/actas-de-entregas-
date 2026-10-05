@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Aprobar acta{% endblock %}
+{% block content %}
+{% include "actas/_acta_document.html" %}
+<div class="my-4"></div>
+<div class="row justify-content-center">
+  <div class="col-xl-8">
+    <div class="card card-synerjoy p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><p class="text-uppercase small text-secondary fw-bold mb-1">Aprobación digital</p><h2 class="mb-0">{{ acta.glpi_case_number }}</h2></div>
+        <span class="status-pill status-pending">{{ acta.get_status_display }}</span>
+      </div>
+      {% if existing_signatures %}<div class="alert alert-info"><strong>Firmas y aprobaciones registradas:</strong> {% for signature in existing_signatures %}{{ signature.get_signature_type_display }} ({{ signature.signer_name }}){% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+      {% if signature_options %}
+      <form method="post">
+        {% csrf_token %}
+        <div class="row g-3 mb-3">
+          <div class="col-md-6"><label class="form-label">Etapa</label><select class="form-select" name="signature_type" required>{% for key, label in signature_options %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+          <div class="col-md-6"><label class="form-label">Supervisor</label><input class="form-control" value="{{ request.user.get_full_name|default:request.user.username }}" readonly></div>
+        </div>
+        <div class="alert alert-info"><strong>Firma PNG fija del supervisor</strong><br><img src="{{ request.user.role_profile.digital_signature.url }}" alt="Firma PNG fija del supervisor" style="max-width:320px;max-height:120px"></div>
+        <button class="btn btn-success btn-lg mt-2" type="submit">Aprobar con firma PNG registrada</button>
+      </form>
+      {% elif role == "RECEIVER" %}
+      <div class="alert alert-info">La firma física se hace en el documento impreso. Después de la aprobación de los supervisores, carga aquí el escaneo PDF desde el detalle del acta.</div>
+      {% else %}
+      <div class="alert alert-warning">No tienes una acción pendiente para esta etapa.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
