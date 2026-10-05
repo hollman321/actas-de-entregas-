@@ -130,6 +130,13 @@ Los reportes están en **Reportes** para administradores, auditores y supervisor
 
 Los despliegues Compose guardan respaldos PostgreSQL en `backups/production/` y `backups/test/` dentro de la carpeta del proyecto. Antes de ejecutar migraciones, el backend genera y valida un respaldo; además, un servicio independiente genera un respaldo cada 24 horas (`BACKUP_INTERVAL_SECONDS`, 86400 por defecto). Los archivos son dumps PostgreSQL en formato custom, con nombres UTC y permisos restrictivos. `backups/` está excluida de Git y de la imagen Docker.
 
+Si ejecutas una migración manual con `manage.py migrate` desde `docker compose exec`, crea primero un respaldo explícito. Ejecuta desde la carpeta del proyecto y usa únicamente el Compose del entorno que vas a modificar:
+
+```powershell
+docker compose --env-file .env -f docker-compose.yml exec backend sh /app/scripts/backup_database.sh manual
+docker compose --project-name actas-test --env-file .env.test -f docker-compose.test.yml exec backend sh /app/scripts/backup_database.sh manual
+```
+
 Para recuperar un respaldo, detén primero el backend del entorno correspondiente y restaura únicamente en la base correcta, después de preservar también su estado actual:
 
 ```powershell

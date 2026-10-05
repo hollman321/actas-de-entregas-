@@ -10,7 +10,14 @@ Este documento describe las funciones que están disponibles hoy y cómo usarlas
 
 Los respaldos automáticos PostgreSQL quedan en las carpetas `backups\production\` y `backups\test\` dentro de esta carpeta del proyecto. El backend crea y valida un respaldo antes de ejecutar las migraciones en cada inicio; el servicio `backup_scheduler` genera respaldos adicionales cada 24 horas por defecto. Se guardan como archivos `.dump` en formato custom, con la fecha y hora UTC en el nombre. `backups\` está excluida de Git y de las imágenes Docker.
 
-Antes de una intervención manual sobre la base, crea también un respaldo y verifica que el archivo no esté vacío. Conserva una copia cifrada fuera del equipo: los archivos locales no protegen contra la pérdida del disco ni el acceso al equipo. No intercambies respaldos entre producción y pruebas. Para restaurar, detén el backend del entorno y usa solamente su servicio `db` y su propio archivo `.dump`; verifica el nombre de base y el archivo antes de confirmar una restauración, ya que reemplaza datos. En PowerShell, copia el dump al contenedor `db` con `docker compose ... cp` y ejecútalo con `pg_restore` dentro del contenedor; no uses redirección binaria `<` de CMD directamente desde PowerShell.
+Antes de una intervención manual sobre la base, crea también un respaldo y verifica que el archivo no esté vacío. En particular, antes de usar `manage.py migrate` manualmente mediante `docker compose exec`, ejecuta primero el script correspondiente:
+
+```powershell
+docker compose --env-file .env -f docker-compose.yml exec backend sh /app/scripts/backup_database.sh manual
+docker compose --project-name actas-test --env-file .env.test -f docker-compose.test.yml exec backend sh /app/scripts/backup_database.sh manual
+```
+
+Conserva una copia cifrada fuera del equipo: los archivos locales no protegen contra la pérdida del disco ni el acceso al equipo. No intercambies respaldos entre producción y pruebas. Para restaurar, detén el backend del entorno y usa solamente su servicio `db` y su propio archivo `.dump`; verifica el nombre de base y el archivo antes de confirmar una restauración, ya que reemplaza datos. En PowerShell, copia el dump al contenedor `db` con `docker compose ... cp` y ejecútalo con `pg_restore` dentro del contenedor; no uses redirección binaria `<` de CMD directamente desde PowerShell.
 
 Para ajustar la frecuencia del servicio automático, define `BACKUP_INTERVAL_SECONDS` en el entorno del proceso Compose (86400 segundos = 24 horas). Si el servicio programador se detiene, revisa sus logs y vuelve a iniciarlo; el backend no ejecutará migraciones si no puede crear y validar primero su respaldo.
 
