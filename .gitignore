@@ -19,11 +19,3 @@ artifacts/
 *.key
 *.p12
 *.pfx
-.env
-.env.test
-db.sqlite3
-media/
-staticfiles/
-__pycache__/
-*.py[cod]
-.vscode/
