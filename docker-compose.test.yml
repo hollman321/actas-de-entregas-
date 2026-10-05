@@ -36,6 +36,7 @@ services:
       PILOT_MODE: ${PILOT_MODE:-True}
       PILOT_END_DATE: ${PILOT_END_DATE:-}
       PORT: ${PORT:-8001}
+      BACKUP_ROOT: /backups
     ports:
       - "${PORT:-8001}:${PORT:-8001}"
     depends_on:
@@ -44,6 +45,26 @@ services:
     volumes:
       - test_media_data:/app/media
       - test_static_data:/app/staticfiles
+      - ./backups:/backups
+    networks: [test_network]
+
+  backup_scheduler:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env.test
+    environment:
+      APP_ENV: testing
+      DB_HOST: db
+      DB_PORT: 5432
+      BACKUP_ROOT: /backups
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    command: ["sh", "/app/scripts/backup_scheduler.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
     networks: [test_network]
 
 volumes:

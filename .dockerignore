@@ -1,8 +1,10 @@
 .git
 .gitignore
+.env*
+!.env.example
+!.env.test.example
 .env
 .env.test
-.env.*
 .venv
 venv
 __pycache__/
@@ -13,6 +15,7 @@ db.sqlite3
 node_modules/
 staticfiles/
 media/
+backups/
 artifacts/
 .pytest_cache/
 .mypy_cache/

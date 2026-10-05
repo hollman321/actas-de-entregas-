@@ -35,6 +35,8 @@ services:
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
       PORT: ${PORT:-8000}
+      APP_ENV: production
+      BACKUP_ROOT: /backups
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
     depends_on:
@@ -43,6 +45,29 @@ services:
     volumes:
       - media_data:/app/media
       - static_data:/app/staticfiles
+      - ./backups:/backups
+    networks:
+      - app_network
+
+  backup_scheduler:
+    image: ${APP_IMAGE:-actas-entrega:latest}
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      APP_ENV: production
+      BACKUP_ROOT: /backups
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    command: ["sh", "/app/scripts/backup_scheduler.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
     networks:
       - app_network
 

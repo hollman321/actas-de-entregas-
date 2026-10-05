@@ -126,6 +126,20 @@ docker compose --env-file .env.test -f docker-compose.test.yml -p actas-test exe
 
 Los reportes están en **Reportes** para administradores, auditores y supervisores. Permiten filtrar fechas y descargar Excel o PDF. Las métricas de duración se calculan con las marcas de tiempo de las firmas existentes.
 
+## Respaldos de base de datos
+
+Los despliegues Compose guardan respaldos PostgreSQL en `backups/production/` y `backups/test/` dentro de la carpeta del proyecto. Antes de ejecutar migraciones, el backend genera y valida un respaldo; además, un servicio independiente genera un respaldo cada 24 horas (`BACKUP_INTERVAL_SECONDS`, 86400 por defecto). Los archivos son dumps PostgreSQL en formato custom, con nombres UTC y permisos restrictivos. `backups/` está excluida de Git y de la imagen Docker.
+
+Para recuperar un respaldo, detén primero el backend del entorno correspondiente y restaura únicamente en la base correcta, después de preservar también su estado actual:
+
+```powershell
+$backup = "backups\production\<archivo>.dump"
+docker compose --env-file .env -f docker-compose.yml cp $backup db:/tmp/restore.dump
+docker compose --env-file .env -f docker-compose.yml exec -T db sh -c 'pg_restore --clean --if-exists --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB" /tmp/restore.dump'
+```
+
+En PowerShell, ejecuta los comandos desde la carpeta del proyecto. En pruebas, usa siempre `--env-file .env.test -f docker-compose.test.yml -p actas-test` y el archivo de `backups\test\`. Detén el backend antes de restaurar y no intercambies respaldos entre producción y pruebas. Los respaldos locales no sustituyen una copia cifrada y externa; limita el acceso a la carpeta y copia periódicamente los dumps a almacenamiento protegido fuera del equipo.
+
 Para crear una cuenta piloto para cada rol, ejecuta el comando en el ambiente donde trabajarán los participantes y entrega las claves que imprime por un canal seguro:
 
 ```powershell

@@ -20,6 +20,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 libffi8 libjpeg62-turbo libopenjp2-7 libpango-1.0-0 \
     libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libxml2 libxslt1.1 \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 appuser
 WORKDIR /app
@@ -28,4 +29,4 @@ COPY --chown=appuser:appuser . .
 RUN mkdir -p /app/staticfiles /app/media && chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3 --access-logfile - --error-logfile -"]
+CMD ["sh", "/app/scripts/container_entrypoint.sh"]
