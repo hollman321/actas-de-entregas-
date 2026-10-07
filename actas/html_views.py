@@ -17,6 +17,7 @@ from django.core.exceptions import SuspiciousFileOperation
 from django.db import IntegrityError, transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render, get_object_or_404
+from django.urls import reverse
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
@@ -25,7 +26,7 @@ from django.utils._os import safe_join
 from glpi.client import GlpiClient
 from notifications.services import schedule_signature_notification
 from accounts.permissions import active_role, get_role_display, get_visible_acta_or_404, visible_actas
-from .exporters import render_acta_xlsx
+from .exporters import render_acta_xlsx, save_final_acta_pdf, upload_final_acta_to_glpi
 from .models import Acta, ActaFieldValue, CampaignCatalog, FormFieldDefinition, PortfolioCatalog, Signature, Site
 from accounts.models import UserRole, WorkflowConfig
 
@@ -220,15 +221,6 @@ def _acta_document_context(acta, draft_post=None):
     signature_by_type = {}
     if getattr(acta, "pk", None):
         signature_by_type = {signature.signature_type: signature for signature in acta.signatures.select_related("signed_by").order_by("signed_at")}
-    elif draft_post is not None:
-        technician_profile = getattr(getattr(acta, "assigned_technician", None), "role_profile", None)
-        if technician_profile and technician_profile.digital_signature:
-            signature_by_type["DELIVERY"] = SimpleNamespace(
-                signature_image=technician_profile.digital_signature,
-                signer_name=acta.assigned_technician.get_full_name() or acta.assigned_technician.username,
-                signer_role="T\u00e9cnico",
-                signed_by=acta.assigned_technician,
-            )
 
     def related_user(field):
         if hasattr(acta, "_meta"):
@@ -242,7 +234,12 @@ def _acta_document_context(acta, draft_post=None):
         name = signature.signer_name if signature else (user.get_full_name() or user.username if user else "Pendiente")
         cargo = signature.signer_role if signature and signature.signer_role else assigned_role
         labels = {"DELIVERY": "Entrega", "REVIEW": "Revisó", "FINAL_APPROVAL": "Aprobó", "RECEIVE": "Recibe"}
-        return {"label": labels.get(slot, slot), "name": name, "cargo": cargo or "Pendiente", "signature": signature}
+        signature_data = ""
+        if signature and signature.signature_image:
+            signature.signature_image.open("rb")
+            signature_data = "data:image/png;base64," + base64.b64encode(signature.signature_image.read()).decode("ascii")
+            signature.signature_image.close()
+        return {"label": labels.get(slot, slot), "name": name, "cargo": cargo or "Pendiente", "signature": signature, "signature_data": signature_data}
 
     roles = [
         signer("DELIVERY", related_user("assigned_technician") or related_user("created_by"), "Técnico"),
@@ -361,10 +358,51 @@ def portfolio_autocomplete(request):
     portfolio = PortfolioCatalog.objects.filter(name__iexact=name, active=True).first()
     if portfolio is None:
         return JsonResponse({"ok": False, "message": "No hay valores configurados para este portafolio."}, status=404)
+    return JsonResponse({
+        "ok": True,
+        "portfolio": portfolio.name,
+        "fields": _portfolio_field_defaults(portfolio),
+    })
+
+
+def _portfolio_field_defaults(portfolio):
     ensure_form_definitions()
-    allowed_labels = set(FormFieldDefinition.objects.filter(active=True, section="sistemas").values_list("label", flat=True))
-    defaults = {label: value for label, value in portfolio.defaults.items() if label in allowed_labels}
-    return JsonResponse({"ok": True, "portfolio": portfolio.name, "fields": defaults})
+    allowed_labels = set(
+        FormFieldDefinition.objects.filter(active=True, section="sistemas").values_list(
+            "label", flat=True
+        )
+    )
+    return {
+        label: value
+        for label, value in portfolio.defaults.items()
+        if label in allowed_labels
+    }
+
+
+@login_required
+def campaign_autocomplete(request):
+    if active_role(request.user) not in {"ADMIN", "TECHNICIAN"}:
+        return JsonResponse({"ok": False, "message": "Tu rol no puede consultar campañas."}, status=403)
+    campaign_id = (request.GET.get("campaign_id") or "").strip()
+    if not campaign_id.isdigit():
+        return JsonResponse({"ok": False, "message": "Selecciona una campaña válida."}, status=400)
+    campaign = CampaignCatalog.objects.select_related("portfolio").filter(
+        pk=campaign_id,
+        active=True,
+    ).first()
+    if campaign is None:
+        return JsonResponse({"ok": False, "message": "La campaña seleccionada no existe o está inactiva."}, status=404)
+    if campaign.portfolio is None or not campaign.portfolio.active:
+        return JsonResponse({
+            "ok": False,
+            "message": "La campaña no tiene un portafolio activo asociado. Pide al administrador que configure la relación.",
+        }, status=409)
+    return JsonResponse({
+        "ok": True,
+        "campaign": campaign.name,
+        "portfolio": campaign.portfolio.name,
+        "fields": _portfolio_field_defaults(campaign.portfolio),
+    })
 
 
 @login_required
@@ -401,11 +439,10 @@ def acta_create(request):
         return HttpResponseForbidden("Solo los t\u00e9cnicos pueden crear actas.")
     fields, sections, field_rows = form_context(request)
     sites = Site.objects.filter(active=True).order_by("name")
-    receivers = UserRole.objects.filter(role="RECEIVER", active=True, user__is_active=True).select_related("user")
+    receiver_profiles = UserRole.objects.filter(role="RECEIVER", active=True, user__is_active=True).select_related("user")
     portfolios = PortfolioCatalog.objects.filter(active=True).order_by("name")
-    campaigns = CampaignCatalog.objects.filter(active=True).order_by("name")
+    campaigns = CampaignCatalog.objects.filter(active=True).select_related("portfolio").order_by("name")
     assignment_context = {
-        "receivers": receivers,
         "portfolios": portfolios,
         "campaigns": campaigns,
         "has_campaigns": campaigns.exists(),
@@ -431,31 +468,18 @@ def acta_create(request):
             return render(request, "actas/form.html", {**base_context, "error": "El número de caso GLPI es obligatorio."})
         if (campaign_id and campaign is None) or (base_context["has_campaigns"] and campaign is None):
             return render(request, "actas/form.html", {**base_context, "error": "Selecciona una campaña activa."}, status=400)
+        if campaign:
+            if campaign.portfolio_id is None or not campaign.portfolio.active:
+                return render(request, "actas/form.html", {
+                    **base_context,
+                    "error": "La campaña seleccionada no tiene un portafolio activo asociado. Pide al administrador que configure la relación.",
+                }, status=400)
+            portfolio = campaign.portfolio.name
 
         site_id = request.POST.get("site_id") or None
-        assignment_ids = {}
-        for field, choices, key in (("receiver_id", receivers, "receiver"),):
-            try:
-                selected_id = int(request.POST.get(field, ""))
-            except (TypeError, ValueError):
-                selected_id = None
-            profile = choices.filter(user_id=selected_id).first() if selected_id else None
-            if profile is None:
-                return render(request, "actas/form.html", {**base_context, "error": "Selecciona el receptor del activo."}, status=400)
-            assignment_ids[key] = profile.user
         workflow = WorkflowConfig.get_solo()
         if not workflow.supervisor_one_id or not workflow.supervisor_two_id:
             return render(request, "actas/form.html", {**base_context, "error": "El administrador debe configurar los dos supervisores en Administración antes de crear actas."}, status=400)
-        profile = getattr(request.user, "role_profile", None)
-        if not profile or not profile.digital_signature:
-            messages.error(request, "Registra tu firma PNG fija antes de crear actas.")
-            return redirect("accounts:supervisor-signature")
-        profile.digital_signature.open("rb")
-        technician_signature = profile.digital_signature.read()
-        profile.digital_signature.close()
-        if not technician_signature.startswith(b"\x89PNG\r\n\x1a\n") or len(technician_signature) > 1024 * 1024:
-            messages.error(request, "La firma PNG del t\u00e9cnico no es v\u00e1lida o supera 1 MB.")
-            return redirect("accounts:supervisor-signature")
         if not all(request.POST.get(name) == "on" for name in LEGAL_CONSENT_FIELDS):
             return render(request, "actas/form.html", {**base_context, "error": "Debes aceptar las tres declaraciones para continuar."}, status=400)
         if act_type not in {"Entrega", "Cambio"}:
@@ -476,13 +500,28 @@ def acta_create(request):
             return render(request, "actas/form.html", {**base_context, "error": "Ya existe un acta con ese número de caso GLPI."}, status=400)
 
         try:
+            glpi_case = GlpiClient().get_case(glpi_case_number)
+        except LookupError:
+            return render(request, "actas/form.html", {**base_context, "error": "No se encontró el caso en GLPI para identificar al receptor."}, status=400)
+        except (requests.RequestException, RuntimeError, ValueError):
+            logger.exception("No se pudo consultar GLPI para identificar al receptor del caso=%s", glpi_case_number)
+            return render(request, "actas/form.html", {**base_context, "error": "No se pudo verificar el receptor con GLPI. Intenta nuevamente."}, status=502)
+
+        receiver_email = str(glpi_case.get("email") or "").strip()
+        if not receiver_email:
+            return render(request, "actas/form.html", {**base_context, "error": "GLPI no proporcionó un correo para identificar al receptor del activo."}, status=400)
+        matching_receiver_profiles = list(receiver_profiles.filter(user__email__iexact=receiver_email)[:2])
+        if not matching_receiver_profiles:
+            return render(request, "actas/form.html", {**base_context, "error": "No hay una cuenta activa con rol Receptor que coincida con el correo de GLPI."}, status=400)
+        if len(matching_receiver_profiles) > 1:
+            return render(request, "actas/form.html", {**base_context, "error": "Hay varias cuentas Receptor con el correo de GLPI. Pide al administrador corregirlas."}, status=400)
+        receiver = matching_receiver_profiles[0].user
+
+        try:
             with transaction.atomic():
-                acta = Acta.objects.create(status="PENDING_SUPERVISOR_ONE", act_type=act_type, act_date=act_date, portfolio=portfolio, campaign=campaign, glpi_case_number=glpi_case_number, created_by=request.user, assigned_technician=request.user, supervisor_one=workflow.supervisor_one, supervisor_two=workflow.supervisor_two, receiver=assignment_ids["receiver"], site_id=site_id, legal_custody_accepted=True, legal_accuracy_confirmed=True, legal_data_processing_accepted=True, legal_accepted_at=timezone.now(), legal_acceptance_ip=_request_ip(request))
-                delivery = Signature.objects.create(acta=acta, signature_type="DELIVERY", signed_by=request.user, signer_name=request.user.get_full_name() or request.user.username, signer_role="T\u00e9cnico", signature_hash=hashlib.sha256(technician_signature).hexdigest(), method="DIGITAL_PNG", result="APPROVED", ip_address=_request_ip(request), user_agent=request.META.get("HTTP_USER_AGENT", ""))
-                delivery.signature_image.save(f"signature-{delivery.pk}.png", ContentFile(technician_signature), save=True)
-                schedule_signature_notification(acta, delivery, actor=request.user)
+                acta = Acta.objects.create(status="PENDING_RECEIVER_SIGNATURE", act_type=act_type, act_date=act_date, portfolio=portfolio, campaign=campaign, glpi_case_number=glpi_case_number, created_by=request.user, assigned_technician=request.user, supervisor_one=workflow.supervisor_one, supervisor_two=workflow.supervisor_two, receiver=receiver, site_id=site_id, legal_custody_accepted=True, legal_accuracy_confirmed=True, legal_data_processing_accepted=True, legal_accepted_at=timezone.now(), legal_acceptance_ip=_request_ip(request))
                 from audit.models import ActaEvent
-                ActaEvent.objects.create(acta=acta, event_type="LIFECYCLE", action="ACTA_CREATED", actor=request.user, from_status="DRAFT", to_status="PENDING_SUPERVISOR_ONE", ip_address=_request_ip(request))
+                ActaEvent.objects.create(acta=acta, event_type="LIFECYCLE", action="ACTA_CREATED", actor=request.user, from_status="DRAFT", to_status="PENDING_RECEIVER_SIGNATURE", ip_address=_request_ip(request))
                 for field in fields:
                     value = request.POST.get(f"field_{field.key}")
                     if value in (None, ""):
@@ -515,9 +554,8 @@ def acta_edit(request, public_id):
 
     fields, sections, field_rows = form_context(request)
     sites = Site.objects.filter(active=True).order_by("name")
-    receivers = UserRole.objects.filter(role="RECEIVER", active=True, user__is_active=True).select_related("user")
     portfolios = PortfolioCatalog.objects.filter(active=True).order_by("name")
-    campaigns = CampaignCatalog.objects.filter(active=True).order_by("name")
+    campaigns = CampaignCatalog.objects.filter(active=True).select_related("portfolio").order_by("name")
     existing_values = {row.definition_id: row.value for row in acta.field_values.all()}
     for row in field_rows:
         row["field_value"] = existing_values.get(row["field"].pk, "")
@@ -527,11 +565,17 @@ def acta_edit(request, public_id):
         act_date = request.POST.get("act_date") or ""
         glpi_case_number = (request.POST.get("glpi_case_number") or "").strip()
         site_id = request.POST.get("site_id") or None
-        base_context = {"acta": acta, "fields": fields, "sections": sections, "field_rows": field_rows, "sites": sites, "receivers": receivers, "portfolios": portfolios, "campaigns": campaigns, "has_campaigns": campaigns.exists(), "title": "Corregir acta"}
+        base_context = {"acta": acta, "fields": fields, "sections": sections, "field_rows": field_rows, "sites": sites, "portfolios": portfolios, "campaigns": campaigns, "has_campaigns": campaigns.exists(), "title": "Corregir acta"}
         campaign_id = (request.POST.get("campaign_id") or "").strip()
         campaign = campaigns.filter(pk=campaign_id).first() if campaign_id.isdigit() else None
         if (campaign_id and campaign is None) or (base_context["has_campaigns"] and campaign is None):
             return render(request, "actas/form.html", {**base_context, "error": "Selecciona una campaña activa."}, status=400)
+        if campaign:
+            if campaign.portfolio_id is None or not campaign.portfolio.active:
+                return render(request, "actas/form.html", {
+                    **base_context,
+                    "error": "La campaña seleccionada no tiene un portafolio activo asociado. Pide al administrador que configure la relación.",
+                }, status=400)
         if not all(request.POST.get(name) == "on" for name in LEGAL_CONSENT_FIELDS):
             return render(request, "actas/form.html", {**base_context, "error": "Debes aceptar las tres declaraciones para continuar."}, status=400)
         if not glpi_case_number or Acta.objects.filter(glpi_case_number=glpi_case_number).exclude(pk=acta.pk).exists():
@@ -549,13 +593,13 @@ def acta_edit(request, public_id):
         if missing:
             return render(request, "actas/form.html", {**base_context, "error": "Completa los campos obligatorios: " + ", ".join(missing)}, status=400)
         previous_status = acta.status
-        next_status = "PENDING_SUPERVISOR_ONE"
+        next_status = "PENDING_RECEIVER_SIGNATURE"
         with transaction.atomic():
-            acta.signatures.filter(result="APPROVED").exclude(signature_type="DELIVERY").update(result="SUPERSEDED")
+            acta.signatures.filter(result="APPROVED").update(result="SUPERSEDED")
             acta.act_type = act_type
             acta.act_date = act_date
             acta.glpi_case_number = glpi_case_number
-            acta.portfolio = (request.POST.get("portfolio") or "").strip()
+            acta.portfolio = campaign.portfolio.name if campaign else (request.POST.get("portfolio") or "").strip()
             acta.campaign = campaign
             acta.site_id = site_id
             acta.status = next_status
@@ -569,9 +613,6 @@ def acta_edit(request, public_id):
             acta.save(update_fields=["act_type", "act_date", "glpi_case_number", "portfolio", "campaign", "site", "status", "rejection_reason", "rejection_step", "legal_custody_accepted", "legal_accuracy_confirmed", "legal_data_processing_accepted", "legal_accepted_at", "legal_acceptance_ip", "updated_at"])
             from audit.models import ActaEvent
             ActaEvent.objects.create(acta=acta, event_type="CORRECTION", action="ACTA_CORRECTED", actor=request.user, from_status=previous_status, to_status=next_status, ip_address=_request_ip(request))
-            delivery_signature = acta.signatures.filter(signature_type="DELIVERY", result="APPROVED").first()
-            if delivery_signature:
-                schedule_signature_notification(acta, delivery_signature, actor=request.user)
             for field in fields:
                 raw_value = request.POST.get(f"field_{field.key}", "")
                 value = (field.field_type == "boolean" and raw_value == "on") if field.field_type == "boolean" else raw_value.strip()
@@ -579,7 +620,74 @@ def acta_edit(request, public_id):
         messages.success(request, "Correcciones guardadas y acta reenviada a revisión.")
         return redirect("html-acta-detail", public_id=acta.public_id)
 
-    return render(request, "actas/form.html", {"acta": acta, "fields": fields, "sections": sections, "field_rows": field_rows, "sites": sites, "receivers": receivers, "portfolios": portfolios, "campaigns": campaigns, "has_campaigns": campaigns.exists(), "title": "Corregir acta"})
+    return render(request, "actas/form.html", {"acta": acta, "fields": fields, "sections": sections, "field_rows": field_rows, "sites": sites, "portfolios": portfolios, "campaigns": campaigns, "has_campaigns": campaigns.exists(), "title": "Corregir acta"})
+
+
+def receiver_public_sign(request, token):
+    acta = get_object_or_404(Acta, receiver_signature_token=token)
+    approved_types = set(acta.signatures.filter(result="APPROVED").values_list("signature_type", flat=True))
+    if "RECEIVE" in approved_types or acta.status != "PENDING_RECEIVER_SIGNATURE":
+        return render(request, "actas/receiver_sign_done.html", {"acta": acta}, status=200)
+
+    identity = {
+        (row.definition.section, row.definition.label): row.value
+        for row in acta.field_values.select_related("definition").filter(definition__section="usuario")
+    }
+    receiver_name = str(identity.get(("usuario", "Nombre completo")) or acta.receiver.get_full_name() or acta.receiver.username)
+    receiver_document = str(identity.get(("usuario", "C\u00e9dula")) or "")
+    context = {
+        "acta": acta,
+        "receiver_name": receiver_name,
+        "receiver_document": receiver_document,
+        **_acta_document_context(acta),
+    }
+    if request.method == "POST":
+        try:
+            signature_bytes = decode_signature_data(request.POST.get("signature_data", ""))
+        except ValueError as error:
+            return render(request, "actas/receiver_sign.html", {**context, "error": str(error)}, status=400)
+
+        with transaction.atomic():
+            locked_acta = Acta.objects.select_for_update().get(pk=acta.pk)
+            if locked_acta.status != "PENDING_RECEIVER_SIGNATURE" or locked_acta.signatures.filter(signature_type="RECEIVE", result="APPROVED").exists():
+                return render(request, "actas/receiver_sign_done.html", {"acta": locked_acta}, status=200)
+            signature = Signature.objects.create(
+                acta=locked_acta,
+                signature_type="RECEIVE",
+                signed_by=locked_acta.receiver,
+                signer_name=receiver_name,
+                signer_role="Receptor del activo",
+                signer_document=receiver_document,
+                signature_hash=hashlib.sha256(signature_bytes).hexdigest(),
+                method="DRAWN_PNG",
+                result="APPROVED",
+                ip_address=_request_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+            signature.signature_image.save(f"signature-{signature.pk}.png", ContentFile(signature_bytes), save=True)
+            previous_status = locked_acta.status
+            locked_acta.status = "PENDING_TECHNICIAN_DELIVERY"
+            locked_acta.save(update_fields=["status", "updated_at"])
+            from audit.models import ActaEvent
+            ActaEvent.objects.create(
+                acta=locked_acta,
+                event_type="SIGNATURE",
+                action="RECEIVE_APPROVED",
+                actor=locked_acta.receiver,
+                from_status=previous_status,
+                to_status=locked_acta.status,
+                ip_address=_request_ip(request),
+            )
+            schedule_signature_notification(locked_acta, signature, actor=locked_acta.receiver)
+        response = render(request, "actas/receiver_sign_done.html", {"acta": locked_acta})
+        response["Cache-Control"] = "no-store"
+        return response
+
+    if request.method != "GET":
+        return HttpResponse(status=405)
+    response = render(request, "actas/receiver_sign.html", context)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @login_required
@@ -591,7 +699,7 @@ def acta_detail(request, public_id):
     signatures = acta.signatures.select_related("signed_by").order_by("signed_at")
     signature_types = dict(Signature.TYPES)
     signatures_by_type = {signature.signature_type: signature for signature in signatures}
-    signature_rows = [{"label": label, "signature": signatures_by_type.get(key)} for key, label in Signature.TYPES if key != "DELIVERY"]
+    signature_rows = [{"label": label, "signature": signatures_by_type.get(key)} for key, label in Signature.TYPES]
     timeline = [
         {"title": "Acta creada", "time": acta.created_at.strftime("%d/%m/%Y %H:%M"), "description": "Se registró el documento inicial."},
         *[{"title": signature_types.get(signature.signature_type, signature.signature_type), "time": signature.signed_at.strftime("%d/%m/%Y %H:%M"), "description": f"Firma registrada por {signature.signer_name}."} for signature in signatures],
@@ -600,8 +708,11 @@ def acta_detail(request, public_id):
     signature_progress = min(100, round(len([item for item in signatures if item.result == "APPROVED"]) / 4 * 100))
     role = active_role(request.user)
     can_review = (role == "SUPERVISOR_ONE" and acta.supervisor_one_id == request.user.pk and acta.status == "PENDING_SUPERVISOR_ONE") or (role == "SUPERVISOR_TWO" and acta.supervisor_two_id == request.user.pk and acta.status == "PENDING_SUPERVISOR_TWO")
+    receiver_sign_url = ""
+    if role == "TECHNICIAN" and acta.assigned_technician_id == request.user.pk and acta.status == "PENDING_RECEIVER_SIGNATURE":
+        receiver_sign_url = request.build_absolute_uri(reverse("html-receiver-public-sign", kwargs={"token": acta.receiver_signature_token}))
     document_context = _acta_document_context(acta)
-    return render(request, "actas/detail.html", {"acta": acta, "timeline": timeline, "field_values": field_values, "signatures": signatures, "signature_rows": signature_rows, "signature_progress": signature_progress, "can_review": can_review, "role": role, "title": "Detalle de acta", **document_context})
+    return render(request, "actas/detail.html", {"acta": acta, "timeline": timeline, "field_values": field_values, "signatures": signatures, "signature_rows": signature_rows, "signature_progress": signature_progress, "can_review": can_review, "role": role, "receiver_sign_url": receiver_sign_url, "title": "Detalle de acta", **document_context})
 
 
 @login_required
@@ -775,25 +886,25 @@ def acta_sign(request, public_id):
     acta = get_visible_acta_or_404(public_id, request.user)
     role = active_role(request.user)
     if request.method == "POST":
-        signature_type = request.POST.get("signature_type", "RECEIVE")
-        if signature_type == "RECEIVE":
-            messages.error(request, "La firma física del receptor se registra cargando el escaneo PDF después de la aprobación.")
-            return redirect("html-acta-detail", public_id=acta.public_id)
+        signature_type = request.POST.get("signature_type", "")
         existing_types = set(acta.signatures.filter(result="APPROVED").values_list("signature_type", flat=True))
-        allowed_roles = {"RECEIVE": {"RECEIVER"}, "DELIVERY": set(), "REVIEW": {"SUPERVISOR_ONE"}, "FINAL_APPROVAL": {"SUPERVISOR_TWO"}}
+        allowed_roles = {"DELIVERY": {"TECHNICIAN"}, "REVIEW": {"SUPERVISOR_ONE"}, "FINAL_APPROVAL": {"SUPERVISOR_TWO"}}
         expected_users = {
-            "RECEIVE": acta.receiver,
             "DELIVERY": acta.assigned_technician,
             "REVIEW": acta.supervisor_one,
             "FINAL_APPROVAL": acta.supervisor_two,
         }
         transitions = {
-            "DELIVERY": ("DELIVERY_SIGNED", "RECEIVER_SIGNED"),
+            "DELIVERY": ("PENDING_SUPERVISOR_ONE", "PENDING_TECHNICIAN_DELIVERY"),
             "REVIEW": ("PENDING_SUPERVISOR_TWO", "PENDING_SUPERVISOR_ONE"),
-            "FINAL_APPROVAL": ("PENDING_RECEIVER_UPLOAD", "PENDING_SUPERVISOR_TWO"),
+            "FINAL_APPROVAL": ("COMPLETED", "PENDING_SUPERVISOR_TWO"),
         }
         next_status, required_status = transitions.get(signature_type, (None, None))
-        required_signatures = {"REVIEW": {"DELIVERY"}, "FINAL_APPROVAL": {"DELIVERY", "REVIEW"}}
+        required_signatures = {
+            "DELIVERY": {"RECEIVE"},
+            "REVIEW": {"RECEIVE", "DELIVERY"},
+            "FINAL_APPROVAL": {"RECEIVE", "DELIVERY", "REVIEW"},
+        }
         if signature_type in required_signatures and not required_signatures[signature_type].issubset(existing_types):
             messages.error(request, "No puedes firmar esta etapa porque faltan firmas anteriores.")
             return redirect("html-acta-sign", public_id=acta.public_id)
@@ -804,40 +915,30 @@ def acta_sign(request, public_id):
             messages.error(request, "Tu rol no tiene permiso para registrar este tipo de firma.")
             return redirect("html-acta-sign", public_id=acta.public_id)
         expected_user = expected_users.get(signature_type)
-        if signature_type == "RECEIVE":
-            if expected_user is None or expected_user.pk != request.user.pk:
-                messages.error(request, "Solo el receptor asignado puede registrar la firma física.")
-                return redirect("html-acta-sign", public_id=acta.public_id)
-        else:
-            if expected_user is None:
-                messages.error(request, "Esta acta no tiene un usuario asignado para esta etapa.")
-                return redirect("html-acta-sign", public_id=acta.public_id)
-            if request.user.pk != expected_user.pk:
-                messages.error(request, "Permiso denegado: tu sesión no corresponde al usuario asignado para esta firma.")
-                return redirect("html-acta-sign", public_id=acta.public_id)
-        valid_required_status = required_status and (acta.status in required_status if isinstance(required_status, tuple) else acta.status == required_status)
-        if not next_status or (required_status and not valid_required_status):
+        if expected_user is None or expected_user.pk != request.user.pk:
+            messages.error(request, "Permiso denegado: tu sesión no corresponde al usuario asignado para esta firma.")
+            return redirect("html-acta-sign", public_id=acta.public_id)
+        if not next_status or acta.status != required_status:
             messages.error(request, "Esta firma no corresponde al estado actual del acta.")
             return redirect("html-acta-sign", public_id=acta.public_id)
-        signer_name = (request.POST.get("signer_name") or request.user.get_full_name() or request.user.username).strip()
-        is_supervisor_approval = signature_type in {"REVIEW", "FINAL_APPROVAL"}
-        if is_supervisor_approval:
-            profile = getattr(request.user, "role_profile", None)
-            if not profile or not profile.digital_signature:
-                messages.error(request, "No tienes una firma digital registrada.")
-                return redirect("accounts:supervisor-signature")
-            profile.digital_signature.open("rb")
-            signature_bytes = profile.digital_signature.read()
-            profile.digital_signature.close()
-            if not signature_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(signature_bytes) > 1024 * 1024:
-                messages.error(request, "La firma digital registrada no es un PNG válido o supera 1 MB.")
-                return redirect("accounts:supervisor-signature")
-        else:
-            messages.error(request, "La firma del t\u00e9cnico se registra con la firma PNG fija del perfil.")
-            return redirect("html-acta-sign", public_id=acta.public_id)
+        profile = getattr(request.user, "role_profile", None)
+        if not profile or not profile.digital_signature:
+            messages.error(request, "Registra tu firma PNG fija antes de firmar.")
+            return redirect("accounts:supervisor-signature")
+        profile.digital_signature.open("rb")
+        signature_bytes = profile.digital_signature.read()
+        profile.digital_signature.close()
+        if not signature_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(signature_bytes) > 1024 * 1024:
+            messages.error(request, "La firma digital registrada no es un PNG válido o supera 1 MB.")
+            return redirect("accounts:supervisor-signature")
+        signer_name = request.user.get_full_name() or request.user.username
         with transaction.atomic():
+            locked_acta = Acta.objects.select_for_update().get(pk=acta.pk)
+            if locked_acta.status != required_status or locked_acta.signatures.filter(signature_type=signature_type, result="APPROVED").exists():
+                messages.error(request, "La etapa ya cambió o la firma fue registrada por otra sesión.")
+                return redirect("html-acta-detail", public_id=acta.public_id)
             signature = Signature.objects.create(
-                acta=acta,
+                acta=locked_acta,
                 signature_type=signature_type,
                 signed_by=request.user,
                 signer_name=signer_name,
@@ -850,23 +951,38 @@ def acta_sign(request, public_id):
                 user_agent=request.META.get("HTTP_USER_AGENT", ""),
             )
             signature.signature_image.save(f"signature-{signature.pk}.png", ContentFile(signature_bytes), save=True)
-            previous_status = acta.status
-            acta.status = next_status
+            previous_status = locked_acta.status
+            locked_acta.status = next_status
             update_fields = ["status", "updated_at"]
+            if signature_type == "FINAL_APPROVAL":
+                locked_acta.completed_at = timezone.now()
+                save_final_acta_pdf(locked_acta)
+                locked_acta.status = "GLPI_UPLOAD_PENDING" if settings.GLPI_UPLOAD_ENABLED else "COMPLETED"
+                locked_acta.glpi_upload_status = "PENDING" if settings.GLPI_UPLOAD_ENABLED else "DISABLED"
+                update_fields.extend(["pdf_file", "completed_at", "glpi_upload_status"])
             from audit.models import ActaEvent
-            ActaEvent.objects.create(acta=acta, event_type="SIGNATURE", action=f"{signature_type}_APPROVED", actor=request.user, from_status=previous_status, to_status=next_status, ip_address=_request_ip(request))
-            acta.save(update_fields=update_fields)
-            schedule_signature_notification(acta, signature, actor=request.user)
-        messages.success(request, f"Firma guardada correctamente: {signer_name}, {signature.signed_at.strftime('%d/%m/%Y %H:%M')}.")
+            ActaEvent.objects.create(acta=locked_acta, event_type="SIGNATURE", action=f"{signature_type}_APPROVED", actor=request.user, from_status=previous_status, to_status=next_status, ip_address=_request_ip(request))
+            locked_acta.save(update_fields=update_fields)
+            schedule_signature_notification(locked_acta, signature, actor=request.user)
+        if signature_type == "FINAL_APPROVAL" and settings.GLPI_UPLOAD_ENABLED:
+            if not upload_final_acta_to_glpi(locked_acta, actor=request.user):
+                messages.error(request, "El PDF final se generó, pero no se pudo asociar en GLPI. El administrador puede reintentar la carga.")
+            else:
+                messages.success(request, "El PDF final se generó y se asoció al caso GLPI.")
+        else:
+            messages.success(request, f"Firma guardada correctamente: {signer_name}, {signature.signed_at.strftime('%d/%m/%Y %H:%M')}.")
         return redirect("html-acta-detail", public_id=acta.public_id)
 
     existing_types = set(acta.signatures.filter(result="APPROVED").values_list("signature_type", flat=True))
     signature_options = []
     profile = getattr(request.user, "role_profile", None)
-    supervisor_waiting = (role == "SUPERVISOR_ONE" and acta.status == "PENDING_SUPERVISOR_ONE") or (role == "SUPERVISOR_TWO" and acta.status == "PENDING_SUPERVISOR_TWO")
-    if supervisor_waiting and (not profile or not profile.digital_signature):
+    technician_waiting = role == "TECHNICIAN" and acta.status == "PENDING_TECHNICIAN_DELIVERY" and acta.assigned_technician_id == request.user.pk
+    supervisor_waiting = (role == "SUPERVISOR_ONE" and acta.status == "PENDING_SUPERVISOR_ONE" and acta.supervisor_one_id == request.user.pk) or (role == "SUPERVISOR_TWO" and acta.status == "PENDING_SUPERVISOR_TWO" and acta.supervisor_two_id == request.user.pk)
+    if (technician_waiting or supervisor_waiting) and (not profile or not profile.digital_signature):
         messages.error(request, "No tienes una firma digital registrada.")
         return redirect("accounts:supervisor-signature")
+    if technician_waiting and "RECEIVE" in existing_types and "DELIVERY" not in existing_types:
+        signature_options.append(("DELIVERY", "Entrega / Técnico"))
     if acta.status == "PENDING_SUPERVISOR_ONE" and "REVIEW" not in existing_types and acta.supervisor_one_id == request.user.pk and getattr(getattr(request.user, "role_profile", None), "digital_signature", None):
         signature_options.append(("REVIEW", "Revisó / Supervisor uno"))
     if acta.status == "PENDING_SUPERVISOR_TWO" and "REVIEW" in existing_types and "FINAL_APPROVAL" not in existing_types and acta.supervisor_two_id == request.user.pk and getattr(getattr(request.user, "role_profile", None), "digital_signature", None):
@@ -891,6 +1007,13 @@ def acta_review(request):
             messages.info(request, "Contin\u00faa en la pantalla de revisi\u00f3n para aprobar con tu firma PNG registrada.")
             return redirect("html-acta-sign", public_id=acta.public_id)
         elif action == "reject":
+            approved_types = set(acta.signatures.filter(result="APPROVED").values_list("signature_type", flat=True))
+            required_types = {"RECEIVE", "DELIVERY"}
+            if role == "SUPERVISOR_TWO":
+                required_types.add("REVIEW")
+            if not required_types.issubset(approved_types):
+                messages.error(request, "No puedes rechazar en esta etapa porque faltan firmas anteriores.")
+                return redirect("html-acta-review")
             reason = (request.POST.get("reason") or "Sin motivo indicado").strip()
             role = active_role(request.user)
             if not reason:

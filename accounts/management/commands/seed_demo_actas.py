@@ -54,12 +54,12 @@ class Command(BaseCommand):
             )
 
             specs = [
-                ("001", "PENDING_SUPERVISOR_ONE", "tech1", "receiver1", False, False, "PRUEBA-SERIAL-001"),
-                ("002", "PENDING_SUPERVISOR_ONE", "tech2", "receiver2", False, False, "PRUEBA-SERIAL-002"),
-                ("003", "PENDING_SUPERVISOR_TWO", "tech1", "receiver1", True, False, "PRUEBA-SERIAL-003"),
+                ("001", "PENDING_RECEIVER_SIGNATURE", "tech1", "receiver1", False, False, "PRUEBA-SERIAL-001"),
+                ("002", "PENDING_TECHNICIAN_DELIVERY", "tech2", "receiver2", False, False, "PRUEBA-SERIAL-002"),
+                ("003", "PENDING_SUPERVISOR_ONE", "tech1", "receiver1", False, False, "PRUEBA-SERIAL-003"),
                 ("004", "REJECTED_BY_SUPERVISOR_ONE", "tech2", "receiver2", False, False, "PRUEBA-SERIAL-004"),
-                ("005", "PENDING_RECEIVER_UPLOAD", "tech1", "receiver1", True, False, "PRUEBA-SERIAL-005"),
-                ("006", "PENDING_RECEIVER_UPLOAD", "tech2", "receiver2", True, False, "PRUEBA-SERIAL-006"),
+                ("005", "PENDING_SUPERVISOR_TWO", "tech1", "receiver1", True, False, "PRUEBA-SERIAL-005"),
+                ("006", "PENDING_SUPERVISOR_TWO", "tech2", "receiver2", True, False, "PRUEBA-SERIAL-006"),
                 ("007", "COMPLETED", "tech1", "receiver1", True, True, "PRUEBA-SERIAL-007"),
             ]
             portfolio_names = sample(DEMO_PORTFOLIOS, k=len(specs))
@@ -87,16 +87,19 @@ class Command(BaseCommand):
                 )
                 ActaFieldValue.objects.create(acta=acta, definition=serial_field, value=serial, source="MANUAL", updated_by=tech)
                 ActaEvent.objects.create(acta=acta, event_type="DEMO", action="TEST_FIXTURE_CREATED", actor=tech, to_status=state, metadata={"test_data": True})
+                if state != "PENDING_RECEIVER_SIGNATURE":
+                    self._approval(acta, "RECEIVE", people[receiver_key])
+                if state in {"PENDING_SUPERVISOR_ONE", "PENDING_SUPERVISOR_TWO", "REJECTED_BY_SUPERVISOR_ONE", "COMPLETED"}:
+                    self._approval(acta, "DELIVERY", tech)
                 if reviewed:
                     self._approval(acta, "REVIEW", people["sup1"])
-                if state in {"PENDING_RECEIVER_UPLOAD", "COMPLETED"}:
+                if state == "COMPLETED":
                     self._approval(acta, "FINAL_APPROVAL", people["sup2"])
                 if state == "REJECTED_BY_SUPERVISOR_ONE":
                     Signature.objects.create(acta=acta, signature_type="REVIEW", signed_by=people["sup1"], signer_name="Demo Supervisor 001", result="REJECTED", rejection_reason=acta.rejection_reason, method="TEST")
                 if signed_scan:
                     acta.pdf_file.save(f"{case_number}.pdf", ContentFile(TEST_PDF), save=False)
                     acta.save(update_fields=["pdf_file"])
-                    Signature.objects.create(acta=acta, signature_type="RECEIVE", signed_by=people[receiver_key], signer_name=people[receiver_key].get_full_name() or people[receiver_key].username, signer_role="Receptor del activo", signature_hash="0" * 64, method="SCANNED_PDF", result="APPROVED")
                 created += 1
 
         self.stdout.write(f"Listas {created} actas ficticias nuevas. Casos PRUEBA-ACTA-001 a PRUEBA-ACTA-007.")

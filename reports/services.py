@@ -37,9 +37,10 @@ def report_data(start_date=None, end_date=None, queryset=None):
     for acta in acts:
         stage_sigs = {s.signature_type: s for s in acta.signatures.all() if s.result == "APPROVED"}
         stages = [
-            ("Supervisor uno", None, "REVIEW"),
-            ("Supervisor dos", "REVIEW", "FINAL_APPROVAL"),
-            ("Escaneo del receptor", "FINAL_APPROVAL", "RECEIVE"),
+            ("Recibe", None, "RECEIVE"),
+            ("Entrega", "RECEIVE", "DELIVERY"),
+            ("Revisó · Supervisor uno", "DELIVERY", "REVIEW"),
+            ("Aprobó · Supervisor dos", "REVIEW", "FINAL_APPROVAL"),
         ]
         for stage, before, after in stages:
             if after in stage_sigs and (before is None or before in stage_sigs):
@@ -55,9 +56,11 @@ def report_data(start_date=None, end_date=None, queryset=None):
 
     pending_statuses = {
         "DRAFT": ("T?cnico", "assigned_technician"),
+        "PENDING_RECEIVER_SIGNATURE": ("Receptor", "receiver"),
+        "PENDING_TECHNICIAN_DELIVERY": ("T?cnico", "assigned_technician"),
         "PENDING_SUPERVISOR_ONE": ("Supervisor uno", "supervisor_one"),
         "PENDING_SUPERVISOR_TWO": ("Supervisor dos", "supervisor_two"),
-        "PENDING_RECEIVER_UPLOAD": ("Receptor", "receiver"),
+        "PENDING_RECEIVER_UPLOAD": ("Receptor · legado", "receiver"),
         "GLPI_UPLOAD_PENDING": ("GLPI", "receiver"),
         "GLPI_UPLOAD_FAILED": ("Administrador", "created_by"),
     }

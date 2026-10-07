@@ -1,6 +1,7 @@
 from django.db import IntegrityError, transaction
 import hashlib
 from django.core.files.base import ContentFile
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -8,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Acta, FormFieldDefinition, Signature
 from .serializers import ActaSerializer, FormFieldDefinitionSerializer, SignatureSerializer
+from .exporters import save_final_acta_pdf, upload_final_acta_to_glpi
 from notifications.services import schedule_signature_notification
 from accounts.permissions import active_role, visible_actas
 
@@ -43,11 +45,11 @@ class ActaViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="receive/sign")
     def sign_receive(self, request, public_id=None):
-        return Response({"detail": "El receptor debe cargar el escaneo con su firma física después de la aprobación."}, status=status.HTTP_410_GONE)
+        return Response({"detail": "La firma del receptor se realiza desde el enlace público de firma generado para el acta."}, status=status.HTTP_410_GONE)
 
     @action(detail=True, methods=["post"], url_path="delivery/sign")
     def sign_delivery(self, request, public_id=None):
-        return Response({"detail": "La firma física corresponde únicamente al receptor del activo."}, status=status.HTTP_410_GONE)
+        return self._sign(request, self.get_object(), "DELIVERY", "PENDING_SUPERVISOR_ONE", "PENDING_TECHNICIAN_DELIVERY")
 
     @action(detail=True, methods=["post"], url_path="review/approve")
     def review_approve(self, request, public_id=None):
@@ -59,7 +61,7 @@ class ActaViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="final-approval/approve")
     def final_approve(self, request, public_id=None):
-        return self._sign(request, self.get_object(), "FINAL_APPROVAL", "PENDING_RECEIVER_UPLOAD", "PENDING_SUPERVISOR_TWO")
+        return self._sign(request, self.get_object(), "FINAL_APPROVAL", "COMPLETED", "PENDING_SUPERVISOR_TWO")
 
     @action(detail=True, methods=["post"], url_path="final-approval/reject")
     def final_reject(self, request, public_id=None):
@@ -67,7 +69,7 @@ class ActaViewSet(viewsets.ModelViewSet):
 
     def _sign(self, request, acta, signature_type, next_status, required_status):
         role = active_role(request.user)
-        allowed_roles = {"REVIEW": {"SUPERVISOR_ONE"}, "FINAL_APPROVAL": {"SUPERVISOR_TWO"}}
+        allowed_roles = {"DELIVERY": {"TECHNICIAN"}, "REVIEW": {"SUPERVISOR_ONE"}, "FINAL_APPROVAL": {"SUPERVISOR_TWO"}}
         if role not in allowed_roles.get(signature_type, set()):
             return Response({"detail": "Tu rol no puede registrar esta firma."}, status=status.HTTP_403_FORBIDDEN)
         expected_users = {"RECEIVE": acta.receiver, "DELIVERY": acta.assigned_technician, "REVIEW": acta.supervisor_one, "FINAL_APPROVAL": acta.supervisor_two}
@@ -75,36 +77,46 @@ class ActaViewSet(viewsets.ModelViewSet):
         if expected_user is None or request.user.pk != expected_user.pk:
             return Response({"detail": "Permiso denegado: tu sesión no corresponde al usuario asignado para esta firma."}, status=status.HTTP_403_FORBIDDEN)
         existing_types = set(acta.signatures.filter(result="APPROVED").values_list("signature_type", flat=True))
-        required_signatures = {"REVIEW": {"DELIVERY"}, "FINAL_APPROVAL": {"DELIVERY", "REVIEW"}}
+        required_signatures = {
+            "DELIVERY": {"RECEIVE"},
+            "REVIEW": {"RECEIVE", "DELIVERY"},
+            "FINAL_APPROVAL": {"RECEIVE", "DELIVERY", "REVIEW"},
+        }
         if signature_type in required_signatures and not required_signatures[signature_type].issubset(existing_types):
             return Response({"detail": "Faltan firmas anteriores para esta etapa."}, status=status.HTTP_409_CONFLICT)
         if required_status and acta.status != required_status:
             return Response({"detail": "La etapa anterior no esta completa."}, status=status.HTTP_409_CONFLICT)
-        signer_name = request.data.get("signer_name") or request.user.get_full_name() or request.user.username
-        is_supervisor_approval = signature_type in {"REVIEW", "FINAL_APPROVAL"}
-        if is_supervisor_approval:
-            profile = getattr(request.user, "role_profile", None)
-            if not profile or not profile.digital_signature:
-                return Response({"detail": "El supervisor no tiene una firma digital registrada."}, status=status.HTTP_400_BAD_REQUEST)
-            profile.digital_signature.open("rb")
-            signature_bytes = profile.digital_signature.read()
-            profile.digital_signature.close()
-            if not signature_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(signature_bytes) > 1024 * 1024:
-                return Response({"detail": "La firma digital registrada no es un PNG válido o supera 1 MB."}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response({"detail": "Solo se admiten firmas PNG fijas."}, status=status.HTTP_410_GONE)
+        signer_name = request.user.get_full_name() or request.user.username
+        profile = getattr(request.user, "role_profile", None)
+        if not profile or not profile.digital_signature:
+            return Response({"detail": "Registra tu firma PNG fija antes de firmar."}, status=status.HTTP_400_BAD_REQUEST)
+        profile.digital_signature.open("rb")
+        signature_bytes = profile.digital_signature.read()
+        profile.digital_signature.close()
+        if not signature_bytes.startswith(b"\x89PNG\r\n\x1a\n") or len(signature_bytes) > 1024 * 1024:
+            return Response({"detail": "La firma digital registrada no es un PNG válido o supera 1 MB."}, status=status.HTTP_400_BAD_REQUEST)
         try:
             with transaction.atomic():
                 signature = Signature.objects.create(acta=acta, signature_type=signature_type, signed_by=request.user, signer_name=signer_name, signer_role=getattr(getattr(request.user, "role_profile", None), "get_role_display", lambda: "")(), signer_document=request.data.get("signer_document", ""), signature_hash=hashlib.sha256(signature_bytes).hexdigest(), method="DIGITAL_PNG" if is_supervisor_approval else request.data.get("method", "DESKTOP"), result="APPROVED", ip_address=request.META.get("REMOTE_ADDR", ""), user_agent=request.META.get("HTTP_USER_AGENT", ""))
                 signature.signature_image.save(f"signature-{signature.pk}.png", ContentFile(signature_bytes), save=True)
                 previous_status = acta.status
                 acta.status = next_status
-                acta.save(update_fields=["status", "updated_at"])
+                update_fields = ["status", "updated_at"]
+                if signature_type == "FINAL_APPROVAL":
+                    from django.utils import timezone
+                    acta.completed_at = timezone.now()
+                    save_final_acta_pdf(acta)
+                    acta.status = "GLPI_UPLOAD_PENDING" if settings.GLPI_UPLOAD_ENABLED else "COMPLETED"
+                    acta.glpi_upload_status = "PENDING" if settings.GLPI_UPLOAD_ENABLED else "DISABLED"
+                    update_fields.extend(["pdf_file", "completed_at", "glpi_upload_status"])
+                acta.save(update_fields=update_fields)
                 from audit.models import ActaEvent
                 ActaEvent.objects.create(acta=acta, event_type="SIGNATURE", action=f"{signature_type}_APPROVED", actor=request.user, from_status=previous_status, to_status=next_status, ip_address=request.META.get("REMOTE_ADDR", ""))
                 schedule_signature_notification(acta, signature, actor=request.user)
         except IntegrityError:
             return Response({"detail": "Esta firma ya existe."}, status=status.HTTP_409_CONFLICT)
+        if signature_type == "FINAL_APPROVAL" and settings.GLPI_UPLOAD_ENABLED:
+            upload_final_acta_to_glpi(acta, actor=request.user)
         return Response(ActaSerializer(acta).data)
 
     def _reject(self, request, acta, next_status, step):
@@ -122,7 +134,7 @@ class ActaViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Esta acta no está pendiente de revisión en esa etapa."}, status=status.HTTP_409_CONFLICT)
         if role != "ADMIN" and (expected_user is None or expected_user.pk != request.user.pk):
             return Response({"detail": "El acta no está asignada a tu usuario."}, status=status.HTTP_403_FORBIDDEN)
-        required = set()
+        required = {"RECEIVE", "DELIVERY"}
         if step == "SUPERVISOR_TWO":
             required.add("REVIEW")
         approved_types = set(acta.signatures.filter(result="APPROVED").values_list("signature_type", flat=True))

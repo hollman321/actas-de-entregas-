@@ -59,6 +59,13 @@ class PortfolioCatalog(models.Model):
 class CampaignCatalog(models.Model):
     objects = models.Manager()
     name = models.CharField(max_length=120, unique=True)
+    portfolio = models.ForeignKey(
+        PortfolioCatalog,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="campaigns",
+    )
     active = models.BooleanField(default=True)
 
     class Meta:
@@ -75,6 +82,8 @@ class Acta(models.Model):
 
     STATUS = [
         ("DRAFT", "Borrador"), ("RECEIVER_SIGNED", "Firma física del receptor registrada"),
+        ("PENDING_RECEIVER_SIGNATURE", "Pendiente firma del receptor"),
+        ("PENDING_TECHNICIAN_DELIVERY", "Pendiente firma de Entrega del técnico"),
         ("DELIVERY_SIGNED", "Entrega firmada"), ("PENDING_SUPERVISOR_ONE", "Pendiente Supervisor uno"),
         ("REJECTED_BY_SUPERVISOR_ONE", "Rechazada por Supervisor uno"),
         ("PENDING_SUPERVISOR_TWO", "Pendiente Supervisor dos"),
@@ -84,6 +93,7 @@ class Acta(models.Model):
         ("GLPI_UPLOADED", "Archivada en GLPI"), ("GLPI_UPLOAD_FAILED", "Error en GLPI"),
     ]
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    receiver_signature_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     form_version = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=40, choices=STATUS, default="DRAFT")
     site = models.ForeignKey(Site, null=True, blank=True, on_delete=models.PROTECT)

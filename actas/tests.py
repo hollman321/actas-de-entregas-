@@ -2,6 +2,8 @@
 import tempfile
 import shutil
 from io import StringIO
+from unittest import skip
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
@@ -50,6 +52,16 @@ class SignatureAuthorizationTests(TestCase):
             supervisor_two=self.supervisor_two,
             receiver=self.receiver,
         )
+        Signature.objects.create(
+            acta=self.acta,
+            signature_type="RECEIVE",
+            signed_by=self.receiver,
+            signer_name="Receptor",
+            signer_role="Receptor del activo",
+            signature_hash="receive-abc",
+            method="DRAWN_PNG",
+            result="APPROVED",
+        )
         Signature.objects.create(acta=self.acta, signature_type="DELIVERY", signed_by=self.technician,
             signer_name="T?cnico", signer_role="T?cnico", signature_hash="abc", method="DIGITAL_PNG", result="APPROVED")
 
@@ -63,6 +75,7 @@ class SignatureAuthorizationTests(TestCase):
 
     def test_only_assigned_receiver_can_upload_the_physical_scan(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
+        self.acta.signatures.filter(signature_type="RECEIVE").delete()
         Signature.objects.create(acta=self.acta, signature_type="REVIEW", signed_by=self.supervisor_one, signer_name="Supervisor uno", result="APPROVED")
         Signature.objects.create(acta=self.acta, signature_type="FINAL_APPROVAL", signed_by=self.supervisor_two, signer_name="Supervisor dos", result="APPROVED")
         self.acta.status = "PENDING_RECEIVER_UPLOAD"
@@ -83,6 +96,7 @@ class SignatureAuthorizationTests(TestCase):
         self.assertEqual(Acta.objects.get(pk=self.acta.pk).status, "COMPLETED")
 
     def test_receiver_cannot_post_a_drawn_signature_instead_of_a_scan(self):
+        self.acta.signatures.filter(signature_type="RECEIVE").delete()
         self.client.login(username="receiver", password="pass123")
         self.client.post(f"/actas/{self.acta.public_id}/sign/", {
             "signature_type": "RECEIVE", "signer_name": "Receptor", "signature_data": PNG_DATA,
@@ -96,6 +110,86 @@ class SignatureAuthorizationTests(TestCase):
         self.acta.refresh_from_db()
         self.assertEqual(self.acta.status, "PENDING_SUPERVISOR_ONE")
         self.assertFalse(Signature.objects.filter(acta=self.acta, signature_type="REVIEW").exists())
+
+    def test_technician_cannot_sign_for_either_supervisor(self):
+        self.client.force_login(self.technician)
+        response = self.client.post(
+            f"/api/actas/{self.acta.public_id}/review/approve/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            Signature.objects.filter(acta=self.acta, signature_type="REVIEW").exists()
+        )
+
+        Signature.objects.create(
+            acta=self.acta,
+            signature_type="REVIEW",
+            signed_by=self.supervisor_one,
+            signer_name="Supervisor uno",
+            result="APPROVED",
+        )
+        self.acta.status = "PENDING_SUPERVISOR_TWO"
+        self.acta.save(update_fields=["status"])
+        response = self.client.post(
+            f"/api/actas/{self.acta.public_id}/final-approval/approve/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            Signature.objects.filter(
+                acta=self.acta,
+                signature_type="FINAL_APPROVAL",
+            ).exists()
+        )
+
+        response = self.client.post(
+            f"/actas/{self.acta.public_id}/sign/",
+            {"signature_type": "REVIEW"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            Signature.objects.filter(acta=self.acta, signature_type="REVIEW").count(),
+            1,
+        )
+        self.assertEqual(
+            Signature.objects.get(acta=self.acta, signature_type="REVIEW").signed_by,
+            self.supervisor_one,
+        )
+
+    @override_settings(IS_TEST_ENVIRONMENT=False)
+    def test_delivery_and_review_notify_the_correct_supervisors(self):
+        from django.core import mail
+        from notifications.models import Notification
+        from notifications.services import notify_signature_saved
+
+        delivery = Signature.objects.get(acta=self.acta, signature_type="DELIVERY")
+        notify_signature_saved(self.acta, delivery, actor=self.technician)
+        first_notification = Notification.objects.get(
+            acta=self.acta,
+            recipient=self.supervisor_one,
+        )
+        self.assertEqual(first_notification.title, "Revisión pendiente")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.supervisor_one.email])
+
+        review = Signature.objects.create(
+            acta=self.acta,
+            signature_type="REVIEW",
+            signed_by=self.supervisor_one,
+            signer_name="Supervisor uno",
+            result="APPROVED",
+        )
+        notify_signature_saved(self.acta, review, actor=self.supervisor_one)
+        second_notification = Notification.objects.get(
+            acta=self.acta,
+            recipient=self.supervisor_two,
+        )
+        self.assertEqual(second_notification.title, "Aprobación final pendiente")
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[1].to, [self.supervisor_two.email])
 
     def test_user_cannot_read_another_technicians_acta(self):
         self.client.login(username="other-tech", password="pass123")
@@ -148,6 +242,7 @@ class SignatureAuthorizationTests(TestCase):
                 definition=definition,
                 defaults={"value": value, "source": "TEST", "updated_by": self.technician},
             )
+        self.acta.signatures.filter(signature_type="RECEIVE").delete()
         for signature_type, signer, name, role in (
             ("REVIEW", self.supervisor_one, "Supervisor de Prueba", "Analista de Procesos"),
             ("FINAL_APPROVAL", self.supervisor_two, "Aprobador de Prueba", "Director de Tecnología"),
@@ -299,7 +394,7 @@ class SignatureAuthorizationTests(TestCase):
         self.client.login(username=administrator.username, password="pass123")
         response = self.client.get("/admin/")
         self.assertEqual(response.status_code, 200)
-        self.assertRegex(response.content.decode(), r"accounts/css/admin\.[\w]+\.css")
+        self.assertRegex(response.content.decode(), r"accounts/css/admin(?:\.[\w]+)?\.css")
         self.assertContains(response, "Synerjoy")
         self.assertContains(response, "Actas")
 
@@ -311,7 +406,10 @@ class SignatureAuthorizationTests(TestCase):
         call_command("seed_demo_actas", stdout=StringIO())
         demos = Acta.objects.filter(glpi_case_number__startswith="PRUEBA-ACTA-")
         self.assertEqual(demos.count(), 7)
-        self.assertEqual(demos.filter(status="PENDING_RECEIVER_UPLOAD").count(), 2)
+        self.assertEqual(demos.filter(status="PENDING_RECEIVER_SIGNATURE").count(), 1)
+        self.assertEqual(demos.filter(status="PENDING_TECHNICIAN_DELIVERY").count(), 1)
+        self.assertEqual(demos.filter(status="PENDING_SUPERVISOR_TWO").count(), 2)
+        self.assertFalse(demos.filter(status="PENDING_RECEIVER_UPLOAD").exists())
         self.assertEqual(demos.values("portfolio").distinct().count(), 7)
 
     def test_supervisor_can_upload_png_signature_and_approval_uses_it(self):
@@ -388,21 +486,20 @@ class SignatureAuthorizationTests(TestCase):
             "legal_custody_accepted": "on",
             "legal_accuracy_confirmed": "on",
             "legal_data_processing_accepted": "on",
-            "receiver_id": str(self.receiver.pk),
         }
         for field in required_fields:
             form_data[f"field_{field.key}"] = "Dato de prueba"
         self.client.login(username="technician", password="pass123")
-        response = self.client.post("/actas/new/", form_data)
+        with patch("actas.html_views.GlpiClient.get_case", return_value={"email": self.receiver.email}):
+            response = self.client.post("/actas/new/", form_data)
         self.assertEqual(response.status_code, 302)
         acta = Acta.objects.get(glpi_case_number="TEST-CREATE-001")
         self.assertEqual(acta.assigned_technician, self.technician)
+        self.assertEqual(acta.receiver, self.receiver)
         self.assertEqual(acta.supervisor_one, self.supervisor_one)
         self.assertEqual(acta.supervisor_two, self.supervisor_two)
-        delivery = Signature.objects.get(acta=acta, signature_type="DELIVERY", result="APPROVED")
-        self.assertEqual(delivery.signed_by, self.technician)
-        self.assertEqual(delivery.method, "DIGITAL_PNG")
-        self.assertTrue(delivery.signature_image)
+        self.assertEqual(acta.status, "PENDING_RECEIVER_SIGNATURE")
+        self.assertFalse(Signature.objects.filter(acta=acta, result="APPROVED").exists())
         self.assertEqual(ActaFieldValue.objects.filter(acta=acta).count(), required_fields.count())
         self.assertTrue(acta.legal_custody_accepted and acta.legal_accuracy_confirmed and acta.legal_data_processing_accepted)
         self.assertIsNotNone(acta.legal_accepted_at)
@@ -410,8 +507,25 @@ class SignatureAuthorizationTests(TestCase):
     def test_campaign_options_are_loaded_saved_and_shown_in_acta_detail(self):
         from .html_views import ensure_form_definitions
 
+        portfolio = PortfolioCatalog.objects.create(
+            name="Portafolio de integración",
+            defaults={
+                "Acceso a HelpDesk GLPI": True,
+                "VPN": False,
+            },
+        )
+        second_portfolio = PortfolioCatalog.objects.create(
+            name="Portafolio de integración alterno",
+            defaults={"Power BI": True},
+        )
         campaign = CampaignCatalog.objects.create(
             name="Campaña de integración",
+            portfolio=portfolio,
+            active=True,
+        )
+        second_campaign = CampaignCatalog.objects.create(
+            name="Campaña de integración alterna",
+            portfolio=second_portfolio,
             active=True,
         )
         CampaignCatalog.objects.create(name="Campaña inactiva", active=False)
@@ -422,7 +536,34 @@ class SignatureAuthorizationTests(TestCase):
         self.assertContains(form, f'<option value="{campaign.pk}"')
         self.assertContains(form, campaign.name)
         self.assertNotContains(form, "Campaña inactiva")
-        self.assertContains(form, 'name="campaign_id" required')
+        self.assertContains(form, 'name="campaign_id"')
+        self.assertContains(form, "readonly")
+        self.assertNotContains(form, 'name="receiver_id"')
+
+        campaign_response = self.client.get(
+            f"/actas/campaigns/autocomplete/?campaign_id={campaign.pk}"
+        )
+        self.assertEqual(campaign_response.status_code, 200)
+        self.assertEqual(campaign_response.json()["portfolio"], portfolio.name)
+        self.assertEqual(
+            campaign_response.json()["fields"],
+            {"Acceso a HelpDesk GLPI": True, "VPN": False},
+        )
+        second_campaign_response = self.client.get(
+            f"/actas/campaigns/autocomplete/?campaign_id={second_campaign.pk}"
+        )
+        self.assertEqual(second_campaign_response.status_code, 200)
+        self.assertEqual(second_campaign_response.json()["portfolio"], second_portfolio.name)
+        self.assertEqual(second_campaign_response.json()["fields"], {"Power BI": True})
+
+        unmapped_campaign = CampaignCatalog.objects.create(
+            name="Campaña sin relación",
+            active=True,
+        )
+        unmapped_response = self.client.get(
+            f"/actas/campaigns/autocomplete/?campaign_id={unmapped_campaign.pk}"
+        )
+        self.assertEqual(unmapped_response.status_code, 409)
 
         missing_campaign = self.client.post(
             "/actas/new/",
@@ -437,20 +578,49 @@ class SignatureAuthorizationTests(TestCase):
             "act_date": timezone.localdate().isoformat(),
             "act_type": "Entrega",
             "glpi_case_number": "TEST-CAMPAIGN-001",
-            "portfolio": "Pruebas",
+            "portfolio": "Valor enviado no confiable",
             "campaign_id": str(campaign.pk),
-            "receiver_id": str(self.receiver.pk),
             "legal_custody_accepted": "on",
             "legal_accuracy_confirmed": "on",
             "legal_data_processing_accepted": "on",
         }
         for field in FormFieldDefinition.objects.filter(active=True, required=True):
             form_data[f"field_{field.key}"] = "Dato de prueba"
+        helpdesk_definition = FormFieldDefinition.objects.get(
+            label="Acceso a HelpDesk GLPI",
+            section="sistemas",
+        )
+        form_data[f"field_{helpdesk_definition.key}"] = "on"
 
-        response = self.client.post("/actas/new/", form_data)
+        with patch("actas.html_views.GlpiClient.get_case", return_value={"email": self.receiver.email}):
+            response = self.client.post("/actas/new/", form_data)
         self.assertEqual(response.status_code, 302)
         acta = Acta.objects.get(glpi_case_number=form_data["glpi_case_number"])
         self.assertEqual(acta.campaign, campaign)
+        self.assertEqual(acta.portfolio, portfolio.name)
+        saved_fields = {
+            field.definition.label: field.value
+            for field in acta.field_values.select_related("definition")
+        }
+        self.assertTrue(saved_fields["Acceso a HelpDesk GLPI"])
+
+        form_data["glpi_case_number"] = "TEST-CAMPAIGN-002"
+        form_data["campaign_id"] = str(second_campaign.pk)
+        form_data[f"field_{helpdesk_definition.key}"] = ""
+        power_bi_definition = FormFieldDefinition.objects.get(
+            label="Power BI",
+            section="sistemas",
+        )
+        form_data[f"field_{power_bi_definition.key}"] = "on"
+        with patch("actas.html_views.GlpiClient.get_case", return_value={"email": self.receiver.email}):
+            response = self.client.post("/actas/new/", form_data)
+        self.assertEqual(response.status_code, 302)
+        second_acta = Acta.objects.get(glpi_case_number=form_data["glpi_case_number"])
+        self.assertEqual(second_acta.campaign, second_campaign)
+        self.assertEqual(second_acta.portfolio, second_portfolio.name)
+        self.assertTrue(
+            second_acta.field_values.get(definition=power_bi_definition).value
+        )
 
         detail = self.client.get(f"/actas/{acta.public_id}/")
         self.assertEqual(detail.status_code, 200)
@@ -462,7 +632,7 @@ class SignatureAuthorizationTests(TestCase):
         api_acta = next(item for item in api_response.json() if item["public_id"] == str(acta.public_id))
         self.assertEqual(api_acta["campaign"], campaign.pk)
 
-    def test_receiver_options_are_preserved_for_technicians_and_validation_errors(self):
+    def test_receiver_is_resolved_from_glpi_email_for_each_technician(self):
         from .html_views import ensure_form_definitions
 
         second_receiver = get_user_model().objects.create_user(
@@ -482,30 +652,76 @@ class SignatureAuthorizationTests(TestCase):
                 self.client.force_login(technician)
                 response = self.client.get("/actas/new/")
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, f'<option value="{self.receiver.pk}"')
-                self.assertContains(response, f'<option value="{second_receiver.pk}"')
+                self.assertNotContains(response, 'name="receiver_id"')
 
                 response = self.client.post("/actas/new/", {"glpi_case_number": ""})
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, f'<option value="{self.receiver.pk}"')
-                self.assertContains(response, f'<option value="{second_receiver.pk}"')
+                self.assertNotContains(response, 'name="receiver_id"')
 
                 form_data = {
                     "act_date": timezone.localdate().isoformat(),
                     "act_type": "Entrega",
                     "glpi_case_number": f"TEST-RECEIVER-{index}",
                     "portfolio": "Pruebas",
-                    "receiver_id": str(second_receiver.pk),
                     "legal_custody_accepted": "on",
                     "legal_accuracy_confirmed": "on",
                     "legal_data_processing_accepted": "on",
                 }
                 for field in required_fields:
                     form_data[f"field_{field.key}"] = "Dato de prueba"
-                response = self.client.post("/actas/new/", form_data)
+                with patch(
+                    "actas.html_views.GlpiClient.get_case",
+                    return_value={"email": second_receiver.email.upper()},
+                ):
+                    response = self.client.post("/actas/new/", form_data)
                 self.assertEqual(response.status_code, 302)
                 acta = Acta.objects.get(glpi_case_number=form_data["glpi_case_number"])
                 self.assertEqual(acta.receiver, second_receiver)
+                self.assertEqual(acta.status, "PENDING_RECEIVER_SIGNATURE")
+                self.assertFalse(acta.signatures.filter(result="APPROVED").exists())
+
+    def test_acta_creation_rejects_missing_or_ambiguous_glpi_receiver(self):
+        from .html_views import ensure_form_definitions
+
+        ensure_form_definitions()
+        form_data = {
+            "act_date": timezone.localdate().isoformat(),
+            "act_type": "Entrega",
+            "glpi_case_number": "TEST-RECEIVER-INVALID",
+            "portfolio": "Pruebas",
+            "legal_custody_accepted": "on",
+            "legal_accuracy_confirmed": "on",
+            "legal_data_processing_accepted": "on",
+        }
+        for field in FormFieldDefinition.objects.filter(active=True, required=True):
+            form_data[f"field_{field.key}"] = "Dato de prueba"
+        self.client.force_login(self.technician)
+
+        invalid_cases = (
+            ("TEST-RECEIVER-NO-MATCH", {"email": "unknown@example.test"}),
+            ("TEST-RECEIVER-NO-EMAIL", {"email": ""}),
+        )
+        for case_number, glpi_case in invalid_cases:
+            with self.subTest(case=case_number):
+                form_data["glpi_case_number"] = case_number
+                with patch("actas.html_views.GlpiClient.get_case", return_value=glpi_case):
+                    response = self.client.post("/actas/new/", form_data)
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(Acta.objects.filter(glpi_case_number=case_number).exists())
+
+        duplicate_receiver = get_user_model().objects.create_user(
+            "duplicate-receiver",
+            email=self.receiver.email,
+        )
+        UserRole.objects.create(user=duplicate_receiver, role="RECEIVER")
+        form_data["glpi_case_number"] = "TEST-RECEIVER-DUPLICATE"
+        with patch(
+            "actas.html_views.GlpiClient.get_case",
+            return_value={"email": self.receiver.email},
+        ):
+            response = self.client.post("/actas/new/", form_data)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Acta.objects.filter(glpi_case_number="TEST-RECEIVER-DUPLICATE").exists())
 
     def test_create_acta_requires_all_legal_consents(self):
         self.client.login(username="technician", password="pass123")
@@ -516,6 +732,7 @@ class SignatureAuthorizationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(Acta.objects.filter(glpi_case_number="TEST-CREATE-NO-CONSENT").exists())
 
+    @skip("El flujo antiguo firmaba ambos supervisores antes de la recepción; el flujo actual se prueba de extremo a extremo en test_ordered_tablet_signature_flow_notifies_each_role_and_generates_letter_pdf.")
     def test_complete_signature_flow_waits_for_receiver_scan_before_completion(self):
         self.acta.status = "PENDING_SUPERVISOR_ONE"
         self.acta.save()
@@ -539,7 +756,57 @@ class SignatureAuthorizationTests(TestCase):
         self.assertTrue(self.acta.pdf_file)
         self.assertEqual(self.acta.signatures.filter(result="APPROVED").count(), 4)
 
+    @override_settings(IS_TEST_ENVIRONMENT=False, GLPI_UPLOAD_ENABLED=False)
+    def test_ordered_tablet_signature_flow_notifies_each_role_and_generates_letter_pdf(self):
+        from notifications.models import Notification
+
+        self.acta.signatures.all().delete()
+        self.acta.status = "PENDING_RECEIVER_SIGNATURE"
+        self.acta.save(update_fields=["status"])
+        receiver_url = f"/actas/receiver/sign/{self.acta.receiver_signature_token}/"
+        self.assertEqual(self.client.get(receiver_url).status_code, 200)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(receiver_url, {"signature_data": PNG_DATA})
+        self.assertEqual(response.status_code, 200)
+        self.acta.refresh_from_db()
+        self.assertEqual(self.acta.status, "PENDING_TECHNICIAN_DELIVERY")
+        receive = Signature.objects.get(acta=self.acta, signature_type="RECEIVE")
+        self.assertEqual(receive.method, "DRAWN_PNG")
+        self.assertEqual(receive.signed_by, self.receiver)
+        self.assertEqual(Notification.objects.get(acta=self.acta, recipient=self.technician).title, "Firma del receptor registrada")
+
+        self.client.force_login(self.technician)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/actas/{self.acta.public_id}/sign/", {"signature_type": "DELIVERY"})
+        self.assertEqual(response.status_code, 302)
+        self.acta.refresh_from_db()
+        self.assertEqual(self.acta.status, "PENDING_SUPERVISOR_ONE")
+        self.assertEqual(Notification.objects.get(acta=self.acta, recipient=self.supervisor_one).title, "Revisión pendiente")
+
+        self.client.force_login(self.supervisor_one)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/actas/{self.acta.public_id}/sign/", {"signature_type": "REVIEW"})
+        self.assertEqual(response.status_code, 302)
+        self.acta.refresh_from_db()
+        self.assertEqual(self.acta.status, "PENDING_SUPERVISOR_TWO")
+        self.assertEqual(Notification.objects.get(acta=self.acta, recipient=self.supervisor_two).title, "Aprobación final pendiente")
+
+        self.client.force_login(self.supervisor_two)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/actas/{self.acta.public_id}/sign/", {"signature_type": "FINAL_APPROVAL"})
+        self.assertEqual(response.status_code, 302)
+        self.acta.refresh_from_db()
+        self.assertEqual(self.acta.status, "COMPLETED")
+        self.assertIsNotNone(self.acta.completed_at)
+        self.assertTrue(self.acta.pdf_file)
+        self.assertTrue(self.acta.pdf_file.read().startswith(b"%PDF-"))
+        self.assertEqual(
+            list(self.acta.signatures.filter(result="APPROVED").order_by("signed_at").values_list("signature_type", flat=True)),
+            ["RECEIVE", "DELIVERY", "REVIEW", "FINAL_APPROVAL"],
+        )
+
     @override_settings(GLPI_UPLOAD_ENABLED=False)
+    @skip("El flujo de escaneo legado fue sustituido por la firma de recepción en tablet.")
     def test_end_to_end_acta_creation_and_completion_across_roles(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
         from .html_views import ensure_form_definitions
@@ -557,7 +824,6 @@ class SignatureAuthorizationTests(TestCase):
             "act_type": "Entrega",
             "glpi_case_number": "TEST-E2E-ALL-ROLES",
             "portfolio": "Progreser2",
-            "receiver_id": str(self.receiver.pk),
             "legal_custody_accepted": "on",
             "legal_accuracy_confirmed": "on",
             "legal_data_processing_accepted": "on",
@@ -566,7 +832,8 @@ class SignatureAuthorizationTests(TestCase):
             if field.required:
                 form_data[f"field_{field.key}"] = "Dato completo de prueba"
         self.client.force_login(self.technician)
-        response = self.client.post("/actas/new/", form_data)
+        with patch("actas.html_views.GlpiClient.get_case", return_value={"email": self.receiver.email}):
+            response = self.client.post("/actas/new/", form_data)
         self.assertEqual(response.status_code, 302)
         acta = Acta.objects.get(glpi_case_number="TEST-E2E-ALL-ROLES")
         self.assertEqual(acta.status, "PENDING_SUPERVISOR_ONE")
@@ -604,6 +871,92 @@ class SignatureAuthorizationTests(TestCase):
             self.assertEqual(self.client.get("/accounts/dashboard/").status_code, 200)
             self.assertEqual(self.client.get(f"/actas/{acta.public_id}/").status_code, 200)
 
+    @override_settings(IS_TEST_ENVIRONMENT=False, GLPI_UPLOAD_ENABLED=False)
+    def test_new_acta_full_flow_starts_with_receiver_and_blocks_other_roles_from_creation(self):
+        from notifications.models import Notification
+        from .html_views import ensure_form_definitions
+
+        auditor = get_user_model().objects.create_user("flow-auditor", password="pass123")
+        UserRole.objects.create(user=auditor, role="AUDITOR")
+        administrator = get_user_model().objects.create_superuser("flow-admin", "flow-admin@example.test", "pass123")
+        for non_creator in (self.supervisor_one, self.supervisor_two, self.receiver, auditor, administrator):
+            self.client.force_login(non_creator)
+            self.assertEqual(self.client.get("/actas/new/").status_code, 403)
+
+        ensure_form_definitions()
+        form_data = {
+            "act_date": timezone.localdate().isoformat(),
+            "act_type": "Entrega",
+            "glpi_case_number": "TEST-E2E-ORDERED-FLOW",
+            "portfolio": "Progreser2",
+            "legal_custody_accepted": "on",
+            "legal_accuracy_confirmed": "on",
+            "legal_data_processing_accepted": "on",
+        }
+        for field in FormFieldDefinition.objects.filter(active=True, required=True):
+            form_data[f"field_{field.key}"] = "Dato completo de prueba"
+        self.client.force_login(self.technician)
+        with patch("actas.html_views.GlpiClient.get_case", return_value={"email": self.receiver.email}):
+            response = self.client.post("/actas/new/", form_data)
+        self.assertEqual(response.status_code, 302)
+        acta = Acta.objects.get(glpi_case_number="TEST-E2E-ORDERED-FLOW")
+        self.assertEqual(acta.status, "PENDING_RECEIVER_SIGNATURE")
+        self.assertFalse(acta.signatures.filter(result="APPROVED").exists())
+        detail = self.client.get(f"/actas/{acta.public_id}/")
+        self.assertContains(detail, str(acta.receiver_signature_token))
+
+        with self.captureOnCommitCallbacks(execute=True):
+            early = self.client.post(f"/actas/{acta.public_id}/sign/", {"signature_type": "DELIVERY"})
+        self.assertEqual(early.status_code, 302)
+        self.assertFalse(acta.signatures.filter(signature_type="DELIVERY", result="APPROVED").exists())
+
+        receiver_url = f"/actas/receiver/sign/{acta.receiver_signature_token}/"
+        self.client.logout()
+        self.assertEqual(self.client.get(receiver_url).status_code, 200)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(receiver_url, {"signature_data": PNG_DATA})
+        self.assertEqual(response.status_code, 200)
+        acta.refresh_from_db()
+        self.assertEqual(acta.status, "PENDING_TECHNICIAN_DELIVERY")
+        self.assertTrue(Notification.objects.filter(acta=acta, recipient=self.technician, title="Firma del receptor registrada").exists())
+
+        self.client.force_login(self.technician)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/actas/{acta.public_id}/sign/", {"signature_type": "DELIVERY"})
+        self.assertEqual(response.status_code, 302)
+        acta.refresh_from_db()
+        self.assertEqual(acta.status, "PENDING_SUPERVISOR_ONE")
+        self.assertTrue(Notification.objects.filter(acta=acta, recipient=self.supervisor_one, title="Revisión pendiente").exists())
+
+        self.client.force_login(self.supervisor_one)
+        self.assertContains(self.client.get("/actas/review/"), acta.glpi_case_number)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/actas/{acta.public_id}/sign/", {"signature_type": "REVIEW"})
+        self.assertEqual(response.status_code, 302)
+        acta.refresh_from_db()
+        self.assertEqual(acta.status, "PENDING_SUPERVISOR_TWO")
+        self.assertTrue(Notification.objects.filter(acta=acta, recipient=self.supervisor_two, title="Aprobación final pendiente").exists())
+
+        self.client.force_login(self.supervisor_two)
+        self.assertContains(self.client.get("/actas/review/"), acta.glpi_case_number)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"/actas/{acta.public_id}/sign/", {"signature_type": "FINAL_APPROVAL"})
+        self.assertEqual(response.status_code, 302)
+        acta.refresh_from_db()
+        self.assertEqual(acta.status, "COMPLETED")
+        self.assertTrue(acta.pdf_file)
+        self.assertTrue(acta.pdf_file.read().startswith(b"%PDF-"))
+        self.assertTrue(Notification.objects.filter(acta=acta, recipient=self.technician, title="Acta completada").exists())
+        self.assertEqual(
+            list(acta.signatures.filter(result="APPROVED").order_by("signed_at").values_list("signature_type", flat=True)),
+            ["RECEIVE", "DELIVERY", "REVIEW", "FINAL_APPROVAL"],
+        )
+
+        for reviewer in (administrator, auditor):
+            self.client.force_login(reviewer)
+            self.assertEqual(self.client.get("/accounts/dashboard/").status_code, 200)
+            self.assertEqual(self.client.get(f"/actas/{acta.public_id}/").status_code, 200)
+
     def test_technician_can_correct_rejected_acta_and_supervisor_can_sign_again(self):
         self.acta.status = "REJECTED_BY_SUPERVISOR_ONE"
         self.acta.rejection_step = "SUPERVISOR_ONE"
@@ -622,7 +975,6 @@ class SignatureAuthorizationTests(TestCase):
             "legal_custody_accepted": "on",
             "legal_accuracy_confirmed": "on",
             "legal_data_processing_accepted": "on",
-            "receiver_id": str(self.receiver.pk),
         }
         for field in required_fields:
             form_data[f"field_{field.key}"] = "Dato corregido"
@@ -630,10 +982,17 @@ class SignatureAuthorizationTests(TestCase):
         response = self.client.post(f"/actas/{self.acta.public_id}/edit/", form_data)
         self.assertEqual(response.status_code, 302)
         self.acta.refresh_from_db()
-        self.assertEqual(self.acta.status, "PENDING_SUPERVISOR_ONE")
-        self.assertEqual(self.acta.signatures.filter(result="SUPERSEDED").count(), 0)
+        self.assertEqual(self.acta.status, "PENDING_RECEIVER_SIGNATURE")
+        self.assertEqual(self.acta.signatures.filter(result="SUPERSEDED").count(), 2)
         self.assertEqual(self.acta.rejection_reason, "")
+        self.assertEqual(self.acta.receiver, self.receiver)
         self.client.logout()
+        receiver_url = f"/actas/receiver/sign/{self.acta.receiver_signature_token}/"
+        self.client.post(receiver_url, {"signature_data": PNG_DATA})
+        self.client.force_login(self.technician)
+        self.client.post(f"/actas/{self.acta.public_id}/sign/", {"signature_type": "DELIVERY"})
+        self.acta.refresh_from_db()
+        self.assertEqual(self.acta.status, "PENDING_SUPERVISOR_ONE")
         self.client.login(username="supervisor-one", password="pass123")
         response = self.client.post(f"/actas/{self.acta.public_id}/sign/", {
             "signature_type": "REVIEW", "signer_name": "Supervisor uno",

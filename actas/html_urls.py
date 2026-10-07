@@ -4,10 +4,12 @@ from . import html_views
 urlpatterns = [
     path("", html_views.acta_list, name="html-acta-list"),
     path("new/", html_views.acta_create, name="html-acta-create"),
+    path("receiver/sign/<uuid:token>/", html_views.receiver_public_sign, name="html-receiver-public-sign"),
     path("preview-draft/", html_views.acta_preview_draft, name="html-acta-preview-draft"),
     path("<uuid:public_id>/edit/", html_views.acta_edit, name="html-acta-edit"),
     path("glpi/autocomplete/", html_views.glpi_autocomplete, name="html-glpi-autocomplete"),
     path("portfolios/autocomplete/", html_views.portfolio_autocomplete, name="html-portfolio-autocomplete"),
+    path("campaigns/autocomplete/", html_views.campaign_autocomplete, name="html-campaign-autocomplete"),
     path("review/", html_views.acta_review, name="html-acta-review"),
     path("<uuid:public_id>/sign/", html_views.acta_sign, name="html-acta-sign"),
     path("<uuid:public_id>/preview/", html_views.acta_preview, name="html-acta-preview"),

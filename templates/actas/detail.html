@@ -23,14 +23,15 @@
       {% include "actas/_acta_document.html" %}
 
       <div class="d-flex gap-2 mb-4 flex-wrap">
-        {% if role == 'SUPERVISOR_ONE' or role == 'SUPERVISOR_TWO' %}<a href="{% url 'html-acta-sign' acta.public_id %}" class="btn btn-primary-synerjoy">Revisar y aprobar con firma digital</a>{% endif %}
+        {% if receiver_sign_url %}<div class="alert alert-info w-100"><strong>Acción requerida:</strong> entrega esta pantalla de firma al receptor en una tablet. No requiere inicio de sesión.<div class="input-group mt-2"><input class="form-control" readonly value="{{ receiver_sign_url }}" aria-label="Enlace de firma del receptor"><a class="btn btn-primary-synerjoy" href="{{ receiver_sign_url }}" target="_blank" rel="noopener">Abrir firma</a></div></div>{% endif %}
+        {% if role == 'TECHNICIAN' and acta.assigned_technician_id == user.pk and acta.status == 'PENDING_TECHNICIAN_DELIVERY' %}<a href="{% url 'html-acta-sign' acta.public_id %}" class="btn btn-primary-synerjoy">Firmar Entrega</a>{% endif %}
+        {% if can_review %}<a href="{% url 'html-acta-sign' acta.public_id %}" class="btn btn-primary-synerjoy">Revisar y firmar</a>{% endif %}
         <a href="{% url 'html-acta-export-xlsx' acta.public_id %}" class="btn btn-outline-synerjoy">Descargar Excel</a>
         <a href="{% url 'html-acta-preview' acta.public_id %}" class="btn btn-outline-secondary" target="_blank">Vista previa</a>
         {% if role == 'TECHNICIAN' and acta.assigned_technician_id == user.pk %}{% if acta.status == 'REJECTED_BY_SUPERVISOR_ONE' or acta.status == 'REJECTED_BY_SUPERVISOR_TWO' %}<a href="{% url 'html-acta-edit' acta.public_id %}" class="btn btn-warning">Corregir y reenviar</a>{% endif %}{% endif %}
         {% if can_review %}<a class="btn btn-success" href="{% url 'html-acta-review' %}">Abrir bandeja de revisión</a>{% endif %}
       </div>
-      {% if role == 'RECEIVER' and acta.receiver_id == user.pk and acta.status == 'PENDING_RECEIVER_UPLOAD' %}<form method="post" enctype="multipart/form-data" action="{% url 'html-acta-receiver-upload' acta.public_id %}" class="alert alert-info">{% csrf_token %}<label class="form-label">Carga del acta firmada físicamente por el receptor (escaneo PDF)</label><input class="form-control mb-2" type="file" name="signed_scan" accept="application/pdf" required><button class="btn btn-primary" type="submit">Cargar escaneo y cerrar acta</button></form>{% endif %}
-      {% if acta.pdf_file %}<p><a href="{{ acta.pdf_file.url }}">Descargar acta firmada escaneada</a></p>{% endif %}
+      {% if acta.pdf_file %}<p><a href="{{ acta.pdf_file.url }}">Descargar PDF final del acta</a></p>{% endif %}
       {% if role == 'ADMIN' and acta.status == 'GLPI_UPLOAD_FAILED' %}<form method="post" action="{% url 'html-acta-glpi-retry' acta.public_id %}">{% csrf_token %}<button class="btn btn-warning" type="submit">Reintentar carga a GLPI</button></form>{% endif %}
 
       <div class="mb-4"><div class="d-flex justify-content-between small mb-1"><span>Progreso de firmas</span><strong>{{ signature_progress }}%</strong></div><div class="progress" role="progressbar" aria-valuenow="{{ signature_progress }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: {{ signature_progress }}%"></div></div></div>
@@ -44,7 +45,7 @@
     </div>
   </div>
 
-  <div class="col-lg-4"><div class="card card-synerjoy p-4"><h3 class="section-title mb-3">Resumen</h3><p class="text-secondary small">{{ signatures|length }} registros en el historial; se requieren dos aprobaciones digitales y el escaneo del receptor.</p><button class="btn btn-outline-synerjoy w-100" type="button" data-bs-toggle="offcanvas" data-bs-target="#timelineDrawer">Ver bitácora completa</button></div></div>
+  <div class="col-lg-4"><div class="card card-synerjoy p-4"><h3 class="section-title mb-3">Resumen</h3><p class="text-secondary small">{{ signatures|length }} registros en el historial; se requieren cuatro firmas en secuencia: Recibe, Entrega, Revisó y Aprobó.</p><button class="btn btn-outline-synerjoy w-100" type="button" data-bs-toggle="offcanvas" data-bs-target="#timelineDrawer">Ver bitácora completa</button></div></div>
 </div>
 <aside class="offcanvas offcanvas-end" tabindex="-1" id="timelineDrawer" aria-labelledby="timelineDrawerLabel"><div class="offcanvas-header"><h5 id="timelineDrawerLabel">Bitácora del acta</h5><button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div><div class="offcanvas-body">{% for step in timeline %}<div class="timeline-entry pb-3"><div class="fw-bold">{{ step.title }}</div><div class="small text-secondary">{{ step.time }}</div><div class="small mt-1">{{ step.description }}</div></div>{% endfor %}</div></aside>
 {% endblock %}

@@ -1,12 +1,17 @@
 from io import BytesIO
 from pathlib import Path
 
+import logging
+
 from django.conf import settings
+from django.core.files.base import ContentFile
+from django.utils.text import slugify
 from openpyxl import load_workbook
 
 from .models import Acta
 
 TEMPLATE_PATH = Path(settings.BASE_DIR) / "templates" / "actas" / "acta_template.xlsx"
+logger = logging.getLogger(__name__)
 
 
 def _value(values, section, label, default="N.A"):
@@ -109,3 +114,68 @@ def render_acta_xlsx(acta: Acta) -> BytesIO:
     workbook.save(output)
     output.seek(0)
     return output
+
+
+def render_acta_pdf(acta: Acta) -> bytes:
+    from django.template.loader import render_to_string
+    from weasyprint import HTML
+
+    from .html_views import _acta_document_context
+
+    markup = render_to_string(
+        "actas/_acta_document.html",
+        {"acta": acta, **_acta_document_context(acta)},
+    )
+    return HTML(string=markup, base_url=str(settings.BASE_DIR)).write_pdf()
+
+
+def save_final_acta_pdf(acta: Acta) -> None:
+    pdf_bytes = render_acta_pdf(acta)
+    filename = f"acta-{acta.pk}-{slugify(acta.glpi_case_number)}.pdf"
+    acta.pdf_file.save(filename, ContentFile(pdf_bytes), save=False)
+
+
+def upload_final_acta_to_glpi(acta: Acta, actor=None) -> bool:
+    if not settings.GLPI_UPLOAD_ENABLED or not acta.pdf_file:
+        return False
+
+    from glpi.client import GlpiClient
+    import requests
+
+    previous_status = acta.status
+    try:
+        with acta.pdf_file.open("rb") as pdf_file:
+            GlpiClient().upload_document(
+                acta.glpi_case_number,
+                acta.pdf_file.name.rsplit("/", 1)[-1],
+                pdf_file,
+            )
+        acta.status = "GLPI_UPLOADED"
+        acta.glpi_upload_status = "UPLOADED"
+        acta.glpi_uploaded_at = acta.completed_at
+        acta.save(update_fields=["status", "glpi_upload_status", "glpi_uploaded_at", "updated_at"])
+        from audit.models import ActaEvent
+        ActaEvent.objects.create(
+            acta=acta,
+            event_type="GLPI",
+            action="DOCUMENT_UPLOADED",
+            actor=actor,
+            from_status=previous_status,
+            to_status=acta.status,
+        )
+        return True
+    except (requests.RequestException, RuntimeError, ValueError, OSError):
+        logger.exception("No se pudo cargar el PDF final a GLPI para acta=%s", acta.public_id)
+        acta.status = "GLPI_UPLOAD_FAILED"
+        acta.glpi_upload_status = "FAILED"
+        acta.save(update_fields=["status", "glpi_upload_status", "updated_at"])
+        from audit.models import ActaEvent
+        ActaEvent.objects.create(
+            acta=acta,
+            event_type="GLPI",
+            action="DOCUMENT_UPLOAD_FAILED",
+            actor=actor,
+            from_status=previous_status,
+            to_status=acta.status,
+        )
+        return False

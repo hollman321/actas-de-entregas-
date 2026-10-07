@@ -88,7 +88,7 @@
     {% for signer in document_signatures %}
       <div class="acta-signature">
         <div class="acta-signature-title">{{ signer.label }}</div>
-        {% if signer.signature.signature_image %}<img src="{{ signer.signature.signature_image.url }}" alt="Firma de {{ signer.name }}">{% elif signer.signature.result == "APPROVED" and signer.label == "Recibe" %}<div class="muted text-center">Firma f?sica recibida; escaneo adjunto</div>{% elif signer.signature.result == "APPROVED" %}<div class="muted text-center">Firma registrada</div>{% else %}<div class="muted text-center">Firma pendiente</div>{% endif %}
+        {% if signer.signature_data %}<img src="{{ signer.signature_data }}" alt="Firma de {{ signer.name }}">{% elif signer.signature.result == "APPROVED" %}<div class="muted text-center">Firma registrada</div>{% else %}<div class="muted text-center">Firma pendiente</div>{% endif %}
         <div><strong>Nombre:</strong> {{ signer.name }}</div>
         <div><strong>Cargo:</strong> {{ signer.cargo }}</div>
       </div>

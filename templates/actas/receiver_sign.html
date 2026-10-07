@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Firma de recepción{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <p class="text-uppercase small text-secondary fw-bold mb-1">Firma del receptor</p>
+  <h1 class="h3">Confirmar recepción del activo</h1>
+  <p>Revisa el acta y firma en el recuadro usando el dedo o un lápiz táctil. No necesitas iniciar sesión.</p>
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  <div class="alert alert-info">
+    <strong>Receptor:</strong> {{ receiver_name }}{% if receiver_document %}<br><strong>Cédula:</strong> {{ receiver_document }}{% endif %}
+    <br><strong>Caso GLPI:</strong> {{ acta.glpi_case_number }}
+  </div>
+  <div class="mb-4">{% include "actas/_acta_document.html" %}</div>
+  <form method="post" id="receiver-sign-form">
+    {% csrf_token %}
+    <label class="form-label fw-bold" for="receiver-signature-canvas">Firma manuscrita</label>
+    <canvas id="receiver-signature-canvas" aria-label="Área para dibujar la firma" style="display:block;width:100%;height:220px;border:2px solid #64748b;border-radius:8px;background:#fff;touch-action:none"></canvas>
+    <input type="hidden" name="signature_data" id="receiver-signature-data">
+    <div class="d-flex justify-content-between gap-2 mt-3">
+      <button class="btn btn-outline-secondary" type="button" id="clear-receiver-signature">Borrar firma</button>
+      <button class="btn btn-primary-synerjoy" type="submit">Firmar y confirmar recepción</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const canvas = document.getElementById('receiver-signature-canvas');
+  const context = canvas.getContext('2d');
+  const form = document.getElementById('receiver-sign-form');
+  const signatureInput = document.getElementById('receiver-signature-data');
+  let drawing = false;
+  let hasInk = false;
+
+  const resizeCanvas = () => {
+    const ratio = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const image = hasInk ? canvas.toDataURL('image/png') : null;
+    canvas.width = Math.round(rect.width * ratio);
+    canvas.height = Math.round(rect.height * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.lineWidth = 2.5;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.strokeStyle = '#17212b';
+    if (image) {
+      const saved = new Image();
+      saved.onload = () => context.drawImage(saved, 0, 0, rect.width, rect.height);
+      saved.src = image;
+    }
+  };
+  const point = event => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  canvas.addEventListener('pointerdown', event => {
+    drawing = true;
+    hasInk = true;
+    canvas.setPointerCapture(event.pointerId);
+    const p = point(event);
+    context.beginPath();
+    context.moveTo(p.x, p.y);
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!drawing) return;
+    const p = point(event);
+    context.lineTo(p.x, p.y);
+    context.stroke();
+  });
+  canvas.addEventListener('pointerup', () => { drawing = false; });
+  canvas.addEventListener('pointercancel', () => { drawing = false; });
+  document.getElementById('clear-receiver-signature').addEventListener('click', () => {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    hasInk = false;
+  });
+  form.addEventListener('submit', event => {
+    if (!hasInk) {
+      event.preventDefault();
+      window.alert('Dibuja tu firma antes de confirmar la recepción.');
+      return;
+    }
+    signatureInput.value = canvas.toDataURL('image/png');
+  });
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+</script>
+{% endblock %}

@@ -6,9 +6,9 @@ admin.site.register([Acta, ActaFieldValue, FormFieldDefinition, Signature, Site]
 
 @admin.register(CampaignCatalog)
 class CampaignCatalogAdmin(admin.ModelAdmin):
-    list_display = ("name", "active")
+    list_display = ("name", "portfolio", "active")
     list_filter = ("active",)
-    search_fields = ("name",)
+    search_fields = ("name", "portfolio__name")
 
 
 @admin.register(PortfolioCatalog)

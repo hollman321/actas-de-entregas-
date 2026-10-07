@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 SIGNATURE_MESSAGES = {
-    "DELIVERY": ("Revisi\u00f3n pendiente", "El t\u00e9cnico registr\u00f3 el acta. El Supervisor uno debe revisarla.", "WARNING"),
-    "REVIEW": ("Aprobaci\u00f3n final pendiente", "El Supervisor uno revis\u00f3 el acta. El Supervisor dos debe aprobarla.", "WARNING"),
-    "FINAL_APPROVAL": ("Firma del receptor pendiente", "El Supervisor dos aprob\u00f3 el acta. El receptor debe firmar f\u00edsicamente y cargar el escaneo PDF.", "WARNING"),
-    "RECEIVE": ("Escaneo final recibido", "El receptor carg\u00f3 el escaneo firmado y el proceso de cierre fue actualizado.", "SUCCESS"),
+    "RECEIVE": ("Firma del receptor registrada", "El receptor firm\u00f3 el acta. El t\u00e9cnico debe completar la firma de Entrega.", "WARNING"),
+    "DELIVERY": ("Revisi\u00f3n pendiente", "El t\u00e9cnico firm\u00f3 la Entrega. Carlos, Supervisor uno, debe revisar el acta.", "WARNING"),
+    "REVIEW": ("Aprobaci\u00f3n final pendiente", "Carlos, Supervisor uno, revis\u00f3 el acta. Jaime, Supervisor dos, debe aprobarla.", "WARNING"),
+    "FINAL_APPROVAL": ("Acta completada", "Jaime, Supervisor dos, aprob\u00f3 el acta. El PDF final est\u00e1 disponible.", "SUCCESS"),
 }
 
 
@@ -34,7 +34,7 @@ def next_recipient(acta, signature_type):
     if signature_type == "REVIEW":
         return acta.supervisor_two or _role_user("SUPERVISOR_TWO")
     if signature_type == "FINAL_APPROVAL":
-        return acta.receiver or acta.created_by
+        return acta.assigned_technician or acta.created_by
     return acta.created_by
 
 

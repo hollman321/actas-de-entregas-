@@ -23,14 +23,14 @@
         <div class="col-md-3"><label class="form-label">Sede</label><select class="form-select" name="site_id" data-autocomplete-site><option value="">Seleccione</option>{% for site in sites %}<option value="{{ site.id }}" {% if acta.site_id == site.id %}selected{% endif %}>{{ site.name }}</option>{% endfor %}</select></div>
         <div class="col-md-3"><label class="form-label">Tipo de acta</label><select class="form-select" name="act_type" required data-autocomplete-header="act_type"><option value="Entrega" {% if acta.act_type == 'Entrega' %}selected{% endif %}>Entrega</option><option value="Cambio" {% if acta.act_type == 'Cambio' %}selected{% endif %}>Cambio</option></select></div>
         <div class="col-md-3"><label class="form-label">Caso GLPI</label><input class="form-control bandera-glpi" name="glpi_case_number" value="{{ acta.glpi_case_number|default:'' }}" required data-case-number></div>
-        <div class="col-md-4"><label class="form-label">Campaña{% if has_campaigns %} *{% endif %}</label><select class="form-select" name="campaign_id" {% if has_campaigns %}required{% endif %}><option value="">Seleccione</option>{% for campaign in campaigns %}<option value="{{ campaign.pk }}" {% if acta.campaign_id == campaign.pk %}selected{% endif %}>{{ campaign.name }}</option>{% endfor %}</select></div>
-        <div class="col-md-6"><label class="form-label">Proceso o portafolio</label><input class="form-control" name="portfolio" list="portfolio-options" value="{{ acta.portfolio|default:'' }}" data-autocomplete-header="portfolio"><datalist id="portfolio-options">{% for portfolio in portfolios %}<option value="{{ portfolio.name }}">{% endfor %}</datalist></div>
-        <div class="col-md-4"><label class="form-label">Receptor del activo *</label><select class="form-select" name="receiver_id" required><option value="">Seleccione</option>{% for profile in receivers %}<option value="{{ profile.user_id }}" {% if acta.receiver_id == profile.user_id %}selected{% endif %}>{{ profile.user.get_full_name|default:profile.user.username }}</option>{% endfor %}</select></div>
+        <div class="col-md-4"><label class="form-label">Campaña{% if has_campaigns %} *{% endif %}</label><select class="form-select" name="campaign_id" data-campaign-select {% if has_campaigns %}required{% endif %}><option value="">Seleccione</option>{% for campaign in campaigns %}<option value="{{ campaign.pk }}" {% if acta.campaign_id == campaign.pk %}selected{% endif %}>{{ campaign.name }}</option>{% endfor %}</select></div>
+        <div class="col-md-6"><label class="form-label">Proceso o portafolio</label><input class="form-control" name="portfolio" value="{{ acta.portfolio|default:'' }}" data-autocomplete-header="portfolio" {% if has_campaigns %}readonly aria-readonly="true"{% else %}list="portfolio-options"{% endif %}><datalist id="portfolio-options">{% for portfolio in portfolios %}<option value="{{ portfolio.name }}">{% endfor %}</datalist></div>
+        <div class="col-12"><div class="alert alert-danger d-none" role="alert" data-campaign-error></div></div>
       </div>
     </section>
 
     {% for section in sections %}
-    <section class="form-section card-synerjoy p-3 mb-4">
+    <section class="form-section card-synerjoy p-3 mb-4" data-autocomplete-section="{{ section.key }}">
       <h3 class="section-title">{{ forloop.counter|add:1 }}. {{ section.label }}</h3>
       <div class="row g-3">
         {% for row in section.rows %}
@@ -80,15 +80,46 @@
     control.dispatchEvent(new Event('input', { bubbles: true }));
   };
   const portfolioInput = document.querySelector('[data-autocomplete-header="portfolio"]');
+  const campaignSelect = document.querySelector('[data-campaign-select]');
+  const campaignError = document.querySelector('[data-campaign-error]');
+  const clearSystemFields = () => {
+    document.querySelectorAll('[data-autocomplete-section="sistemas"] [data-autocomplete-field]').forEach(control => {
+      if (control.type === 'checkbox') control.checked = false;
+      else control.value = '';
+      control.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+  const applyPortfolioFields = fields => Object.entries(fields || {}).forEach(([label, value]) => setField(label, value));
   portfolioInput.addEventListener('change', async () => {
     const name = portfolioInput.value.trim();
     if (!name) return;
     try {
       const response = await fetch(`{% url 'html-portfolio-autocomplete' %}?name=${encodeURIComponent(name)}`, { headers: { 'Accept': 'application/json' } });
       const payload = await response.json();
-      if (!response.ok || !payload.ok) return;
-      Object.entries(payload.fields || {}).forEach(([label, value]) => setField(label, value));
-    } catch (error) { console.error('No se pudo cargar el cat?logo del portafolio.', error); }
+      if (!response.ok || !payload.ok) throw new Error(payload.message || 'No se pudo cargar el portafolio.');
+      clearSystemFields();
+      applyPortfolioFields(payload.fields);
+    } catch (error) { alert(error.message); }
+  });
+  campaignSelect.addEventListener('change', async () => {
+    campaignError.classList.add('d-none');
+    campaignError.textContent = '';
+    clearSystemFields();
+    const campaignId = campaignSelect.value;
+    portfolioInput.value = '';
+    if (!campaignId) return;
+    try {
+      const response = await fetch(`{% url 'html-campaign-autocomplete' %}?campaign_id=${encodeURIComponent(campaignId)}`, { headers: { 'Accept': 'application/json' } });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || 'No se pudo cargar la campaña.');
+      if (campaignSelect.value !== campaignId) return;
+      portfolioInput.value = payload.portfolio;
+      applyPortfolioFields(payload.fields);
+    } catch (error) {
+      if (campaignSelect.value !== campaignId) return;
+      campaignError.textContent = error.message;
+      campaignError.classList.remove('d-none');
+    }
   });
   glpiButton.addEventListener('click', async () => {
     const caseNumber = caseInput.value.trim();

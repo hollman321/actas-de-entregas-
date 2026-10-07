@@ -1,6 +1,6 @@
 # Automatizacion Actas de Entrega
 
-Consulta [MANUAL_USUARIO.md](MANUAL_USUARIO.md) para la guía de uso, operación de pruebas, firmas, reportes y piloto.
+Consulta [MANUAL_USUARIO.md](MANUAL_USUARIO.md) para la guía de uso, operación de pruebas, firmas, reportes y piloto. El mapa de tablas PostgreSQL y almacenamiento de archivos está en [MAPA_ALMACENAMIENTO.md](MAPA_ALMACENAMIENTO.md).
 
 Sistema Django para automatizar el Acta de Entrega y Cambio de Activos Tecnologicos de Synerjoy BPO.
 

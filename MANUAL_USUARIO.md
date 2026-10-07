@@ -121,7 +121,7 @@ docker compose --env-file .env.test -f docker-compose.test.yml -p actas-test up 
 ## 6. Crear un acta
 
 1. En **Actas**, selecciona **Nueva acta**. Solo el rol Técnico puede crear actas.
-2. Completa fecha, sede, tipo (Entrega o Cambio), número de caso GLPI y portafolio.
+2. Completa fecha, sede, tipo (Entrega o Cambio) y número de caso GLPI. Al elegir una campaña, el sistema completa automáticamente **Proceso o portafolio** y los valores configurados para los campos de sistemas/usuarios asociados a ese portafolio.
 3. Para cargar datos desde GLPI, escribe el número del caso y pulsa **Autocompletar desde GLPI**. Revisa y corrige los datos antes de guardar.
 4. Completa la información de la persona, sistemas, equipo, periféricos, monitor y observaciones que aplique.
 5. Acepta las confirmaciones legales requeridas por el formulario y pulsa **Guardar acta**.
@@ -132,16 +132,16 @@ En el ambiente de pruebas se pueden usar estos casos simulados: 45084, 42931, 45
 
 ## 7. Flujo de firmas y revisión
 
-El flujo usa imágenes PNG registradas por cada firmante; no se dibujan firmas en pantalla. Técnico y supervisores cargan o actualizan su firma desde **Mi firma digital**. La aprobación ocurre en este orden:
+La firma del receptor se dibuja en una pantalla táctil accesible desde el enlace individual del acta, sin iniciar sesión. El Técnico y los supervisores firman con la imagen PNG registrada en **Mi firma digital**. El flujo ocurre en este orden:
 
 | Orden | Firma | Quién la registra | Siguiente paso |
 |---|---|---|---|
-| 1 | Entrega | Técnico que crea el acta | Bandeja de Supervisor uno |
-| 2 | Revisó | Supervisor uno asignado | Bandeja de Supervisor dos |
-| 3 | Aprobó | Supervisor dos asignado | Carga final del receptor |
-| 4 | Recibe | Receptor asignado, adjuntando el documento firmado | Cierre del proceso |
+| 1 | Recibe | Receptor, desde el enlace público abierto en una tablet | Notificación al Técnico |
+| 2 | Entrega | Técnico asignado | Notificación a Supervisor uno |
+| 3 | Revisó | Supervisor uno asignado | Notificación a Supervisor dos |
+| 4 | Aprobó | Supervisor dos asignado | Generación automática del PDF y notificación al Técnico |
 
-Las notificaciones internas aparecen en la bandeja y el indicador de notificaciones. En pruebas, los avisos de correo se registran en los logs y no se envían externamente.
+El Técnico comparte el enlace de recepción que aparece en el detalle del acta con quien recibe el equipo. El enlace funciona como una credencial: compártelo únicamente con esa persona. Las notificaciones internas aparecen en la bandeja y el indicador de notificaciones. En pruebas, los avisos de correo se registran en los logs y no se envían externamente.
 
 Si un supervisor rechaza un acta, debe escribir el motivo y confirmar el rechazo. El motivo queda visible en el detalle y se genera una notificación. El técnico asignado puede corregir y reenviar el acta para que vuelva a la etapa correspondiente.
 
@@ -153,9 +153,10 @@ Desde la lista o el detalle del acta puedes:
 - Consultar la bitácora del acta.
 - Abrir la vista previa.
 - Descargar el formato individual de acta en Excel.
+- Descargar el PDF final, que se genera automáticamente cuando Supervisor dos registra la aprobación.
 - Usar la impresión del navegador desde la pantalla de creación como vista previa impresa.
 
-La exportación PDF de la sección **Reportes** corresponde al informe agregado; la descarga individual disponible desde el acta es Excel.
+La exportación PDF de la sección **Reportes** corresponde al informe agregado. El PDF individual de un acta se genera al completar la cuarta firma.
 
 ## 9. Reportes
 
@@ -185,7 +186,9 @@ En **Autenticación y autorización → Usuarios**, abre el usuario para editar 
 
 Las cuentas no se pueden eliminar desde Django Admin. Desactivarlas impide que inicien sesión y que aparezcan como receptores activos, sin borrar sus actas, firmas, eventos ni notificaciones.
 
-Las campañas son un catálogo independiente del campo **Proceso o portafolio**. Administra sus nombres y estado en **Actas → Catálogo de campañas**. Solo las campañas activas se ofrecen al crear o corregir un acta; la campaña seleccionada queda guardada en el acta y aparece en su detalle. El comando `seed_test_campaigns` crea nombres ficticios únicamente en ambientes `test`, `testing` o `staging`; no lo ejecutes en producción.
+Cada campaña debe vincularse a un portafolio desde **Actas → Catálogo de campañas**. El portafolio asociado determina el valor de **Proceso o portafolio** y los valores automáticos del bloque de sistemas/usuarios. Solo se ofrecen campañas activas; si una campaña no tiene un portafolio activo asociado, no se puede usar para guardar el acta y el administrador debe configurar primero la relación. Las campañas y portafolios con el mismo nombre se vinculan automáticamente al aplicar la migración; revisa en Django Admin las demás relaciones. El comando `seed_test_campaigns` crea nombres ficticios únicamente en ambientes `test`, `testing` o `staging`; asigna a cada una un portafolio desde Django Admin antes de usarlas en una prueba.
+
+El formulario no muestra un selector **Receptor del activo**. El receptor se resuelve al guardar con el correo del caso GLPI y debe coincidir con una única cuenta activa de rol Receptor. El registro del receptor se conserva en el acta para la firma, la carga del escaneo y la consulta del historial.
 
 ## 11. Diferencias entre pruebas y producción
 

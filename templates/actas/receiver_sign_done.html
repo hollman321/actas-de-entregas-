@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Firma registrada{% endblock %}
+{% block content %}
+<div class="card card-synerjoy p-4">
+  <h1 class="h3">La firma de recepción ya está registrada</h1>
+  <p>El técnico asignado fue notificado y debe continuar con la firma de Entrega.</p>
+  <p class="mb-0"><strong>Caso GLPI:</strong> {{ acta.glpi_case_number }}</p>
+</div>
+{% endblock %}

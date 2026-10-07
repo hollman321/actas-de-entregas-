@@ -101,13 +101,13 @@ class Command(BaseCommand):
 
             definitions = list(FormFieldDefinition.objects.filter(active=True).order_by("sort_order"))
             status_specs = [
-                "PENDING_SUPERVISOR_ONE",
+                "PENDING_RECEIVER_SIGNATURE",
+                "PENDING_RECEIVER_SIGNATURE",
+                "PENDING_TECHNICIAN_DELIVERY",
+                "PENDING_TECHNICIAN_DELIVERY",
                 "PENDING_SUPERVISOR_ONE",
                 "PENDING_SUPERVISOR_ONE",
                 "PENDING_SUPERVISOR_TWO",
-                "PENDING_SUPERVISOR_TWO",
-                "PENDING_RECEIVER_UPLOAD",
-                "PENDING_RECEIVER_UPLOAD",
                 "REJECTED_BY_SUPERVISOR_ONE",
             ]
             available = []
@@ -172,11 +172,16 @@ class Command(BaseCommand):
                         updated_by=technician,
                     )
 
-                self._signature(acta, "DELIVERY", technician, "Técnico asignado")
-                if status in {"PENDING_SUPERVISOR_TWO", "PENDING_RECEIVER_UPLOAD"}:
+                if status != "PENDING_RECEIVER_SIGNATURE":
+                    self._signature(acta, "RECEIVE", receiver, "Receptor del activo")
+                if status in {
+                    "PENDING_SUPERVISOR_ONE",
+                    "PENDING_SUPERVISOR_TWO",
+                    "REJECTED_BY_SUPERVISOR_ONE",
+                }:
+                    self._signature(acta, "DELIVERY", technician, "Técnico")
+                if status == "PENDING_SUPERVISOR_TWO":
                     self._signature(acta, "REVIEW", supervisor_one, "Supervisor uno")
-                if status == "PENDING_RECEIVER_UPLOAD":
-                    self._signature(acta, "FINAL_APPROVAL", supervisor_two, "Supervisor dos")
                 if status == "REJECTED_BY_SUPERVISOR_ONE":
                     Signature.objects.create(
                         acta=acta,
